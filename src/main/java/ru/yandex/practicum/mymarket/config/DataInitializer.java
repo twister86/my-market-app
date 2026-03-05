@@ -6,8 +6,6 @@ import org.springframework.stereotype.Component;
 import ru.yandex.practicum.mymarket.entity.Item;
 import ru.yandex.practicum.mymarket.repository.ItemRepository;
 
-import java.util.Random;
-
 @Component
 @RequiredArgsConstructor
 public class DataInitializer implements CommandLineRunner {
@@ -22,8 +20,8 @@ public class DataInitializer implements CommandLineRunner {
                 Item item = new Item();
                 item.setTitle("Item " + i);
                 item.setDescription("Описание товара " + i);
-                item.setImgPath("/images/item" + i + ".jpg");
-                item.setPrice((new Random(12345L)).nextLong()); // пример цены
+                item.setImgPath("/images/" + i + ".jpg");
+                item.setPrice((long) (Math.random() * (10000 - 100))); // пример цены
                 item.setCount(0); // по умолчанию в корзине нет
                 itemRepository.save(item);
             }

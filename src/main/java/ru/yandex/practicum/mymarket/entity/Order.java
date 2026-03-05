@@ -17,8 +17,9 @@ public class Order {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    @JoinColumn(name = "order_id")
     @OneToMany(cascade = CascadeType.ALL)
-    private List<Item> items;
+    private List<OrderItem> items;
 
     private Long totalSum;
 }

@@ -48,15 +48,38 @@ public class ItemController {
 
     @GetMapping("/{id}")
     public String getItem(@PathVariable Long id, Model model) {
-        Item item = itemService.findById(id);
+        ItemDto item = itemService.findById(id);
         model.addAttribute("item", item);
         return "item";
     }
 
     @PostMapping("/{id}")
     public String updateItemCount(@PathVariable Long id, @RequestParam String action) {
-        Item item = itemService.findById(id);
+        Item item = itemService.findItemById(id);
         if (item != null) cartService.updateCount(item, action);
         return "redirect:/items/" + id;
     }
+
+    @PostMapping
+    public String updateCart(
+            @RequestParam Long id,
+            @RequestParam String action,
+            @RequestParam(required = false) String search,
+            @RequestParam(required = false, defaultValue = "NO") String sort,
+            @RequestParam(required = false, defaultValue = "1") int pageNumber,
+            @RequestParam(required = false, defaultValue = "5") int pageSize
+            ) {
+        if ("PLUS".equals(action)) {
+            cartService.addToCart(id, 1);
+        } else if ("MINUS".equals(action)) {
+            cartService.updateCount(itemService.findItemById(id), action);
+        }
+
+        return "redirect:/items?search=" + (search != null ? search : "") +
+                "&sort=" + sort +
+                "&pageNumber=" + pageNumber +
+                "&pageSize=" + pageSize;
+    }
+
+
 }

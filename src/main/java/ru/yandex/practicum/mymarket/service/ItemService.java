@@ -48,7 +48,11 @@ public class ItemService {
         return new PageImpl<>(dtoList, items.getPageable(), items.getTotalElements());
     }
 
-    public Item findById(Long id) {
+    public ItemDto findById(Long id) {
+        return itemMapper.toDto(itemRepository.findById(id).orElse(null));
+    }
+
+    public Item findItemById(Long id) {
         return itemRepository.findById(id).orElse(null);
     }
 }

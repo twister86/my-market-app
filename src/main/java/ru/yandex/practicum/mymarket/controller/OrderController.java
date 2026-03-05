@@ -5,6 +5,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.*;
+import ru.yandex.practicum.mymarket.dto.OrderDto;
 import ru.yandex.practicum.mymarket.entity.Order;
 import ru.yandex.practicum.mymarket.mapper.ItemMapper;
 import ru.yandex.practicum.mymarket.service.CartService;
@@ -27,7 +28,7 @@ public class OrderController {
 
     @GetMapping("/{id}")
     public String getOrder(@PathVariable Long id, Model model) {
-        Order order = orderService.findById(id);
+        OrderDto order = orderService.findById(id);
         model.addAttribute("order", order);
         return "order";
     }
@@ -35,7 +36,7 @@ public class OrderController {
     @PostMapping("/buy")
     public String buy() {
         Order order = Order.builder()
-                .items(itemMapper.toEntityList(cartService.getCartItems()))
+                .items(cartService.prepareOrderItems())
                 .totalSum(cartService.getTotalPrice())
                 .build();
         Order saved = orderService.save(order);

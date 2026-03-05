@@ -30,7 +30,7 @@ public class CartController {
 
     @PostMapping("/items")
     public String updateCart(@RequestParam Long id, @RequestParam String action) {
-        Item item = itemService.findById(id);
+        Item item = itemService.findItemById(id);
         if (item != null) cartService.updateCount(item, action);
         return "redirect:/cart/items";
     }
