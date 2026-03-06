@@ -1,5 +1,6 @@
 package ru.yandex.practicum.mymarket.controller;
 
+import jakarta.servlet.http.HttpSession;
 import lombok.AllArgsConstructor;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Controller;
@@ -21,26 +22,20 @@ public class OrderController {
     private final ItemMapper itemMapper;
 
     @GetMapping
-    public String orders(Model model) {
-        model.addAttribute("orders", orderService.findAll());
+    public String orders(Model model, HttpSession session) {
+        model.addAttribute("orders", orderService.getOrders(session.getId()));
         return "orders";
     }
 
     @GetMapping("/{id}")
-    public String getOrder(@PathVariable Long id, Model model) {
-        OrderDto order = orderService.findById(id);
+    public String getOrder(@PathVariable Long id, Model model, HttpSession session) {
+        OrderDto order = orderService.getOrderById(session.getId(), id);
         model.addAttribute("order", order);
         return "order";
     }
 
     @PostMapping("/buy")
-    public String buy() {
-        Order order = Order.builder()
-                .items(cartService.prepareOrderItems())
-                .totalSum(cartService.getTotalPrice())
-                .build();
-        Order saved = orderService.save(order);
-        cartService.clearCart();
-        return "redirect:/orders/" + saved.getId();
+    public String buy(HttpSession session) {
+        return "redirect:/orders/" + orderService.checkout(session.getId());
     }
 }

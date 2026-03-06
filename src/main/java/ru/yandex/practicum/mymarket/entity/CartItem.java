@@ -15,25 +15,23 @@ import lombok.Setter;
 import lombok.experimental.Accessors;
 
 @Entity
-@Table(name = "order_items")
+@Table(name = "cart_item")
 @Getter
 @Setter
 @NoArgsConstructor
 @AllArgsConstructor
 @Accessors(chain = true)
-public class OrderItem {
+public class CartItem {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    private Integer count;
+    private String sessionId;
+
+    private Integer quantity;
 
     @ManyToOne
     @JoinColumn(name = "item_id")
     private Item item;
-
-    @ManyToOne
-    @JoinColumn(name = "order_id")
-    private Order order;
 }

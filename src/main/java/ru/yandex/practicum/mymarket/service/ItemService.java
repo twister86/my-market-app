@@ -10,20 +10,25 @@ import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import ru.yandex.practicum.mymarket.dto.ItemDto;
+import ru.yandex.practicum.mymarket.entity.CartItem;
 import ru.yandex.practicum.mymarket.entity.Item;
 import ru.yandex.practicum.mymarket.mapper.ItemMapper;
+import ru.yandex.practicum.mymarket.repository.CartItemRepository;
 import ru.yandex.practicum.mymarket.repository.ItemRepository;
 
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 @Service
 @AllArgsConstructor
 public class ItemService {
     private final ItemRepository itemRepository;
+    private final CartItemRepository cartItemRepository;
     private final ItemMapper itemMapper;
 
     @Transactional(readOnly = true)
-    public Page<ItemDto> findAll(String search, String sort, int pageNumber, int pageSize) {
+    public Page<ItemDto> findAll(String search, String sort, int pageNumber, int pageSize, String sessionId) {
         Sort sortOrder = Sort.unsorted();
         if ("ALPHA".equals(sort)) {
             sortOrder = Sort.by(Sort.Direction.ASC, "title");
@@ -41,8 +46,21 @@ public class ItemService {
             items = itemRepository.findAll(pageable);
         }
 
+        List<CartItem> cartItems = cartItemRepository.findBySessionId(sessionId);
+
+        Map<Long, Integer> cartMap =
+                cartItems.stream()
+                        .collect(Collectors.toMap(
+                                c -> c.getItem().getId(),
+                                CartItem::getQuantity
+                        ));
+
         List<ItemDto> dtoList = items.getContent().stream()
-                .map(itemMapper::toDto)
+                .map(item -> {
+                    ItemDto dto = itemMapper.toDto(item);
+                    dto.setCount(cartMap.getOrDefault(item.getId(), 0));
+                    return dto;
+                })
                 .toList();
 
         return new PageImpl<>(dtoList, items.getPageable(), items.getTotalElements());

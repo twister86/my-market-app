@@ -17,6 +17,8 @@ public class Order {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    private String sessionId;
+
     @JoinColumn(name = "order_id")
     @OneToMany(cascade = CascadeType.ALL)
     private List<OrderItem> items;

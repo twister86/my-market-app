@@ -1,101 +1,103 @@
 package ru.yandex.practicum.mymarket.service;
 
-import lombok.Getter;
 import lombok.RequiredArgsConstructor;
-import lombok.Setter;
-import org.springframework.context.annotation.Scope;
-import org.springframework.context.annotation.ScopedProxyMode;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import ru.yandex.practicum.mymarket.dto.ItemDto;
+import ru.yandex.practicum.mymarket.entity.CartItem;
 import ru.yandex.practicum.mymarket.entity.Item;
-import ru.yandex.practicum.mymarket.entity.OrderItem;
 import ru.yandex.practicum.mymarket.mapper.ItemMapper;
+import ru.yandex.practicum.mymarket.repository.CartItemRepository;
 import ru.yandex.practicum.mymarket.repository.ItemRepository;
 
-import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
-import java.util.stream.Collectors;
 
 @Service
-@Scope(value = "session", proxyMode = ScopedProxyMode.TARGET_CLASS)
 @RequiredArgsConstructor
 public class CartService {
 
+    private final CartItemRepository cartItemRepository;
     private final ItemRepository itemRepository;
+
     private final ItemMapper itemMapper;
 
-    private final Map<Long, Integer> cart = new HashMap<>();
-
-    public long getTotalPrice() {
-        return getCartItems().stream()
-                .mapToLong(item -> item.getPrice() * item.getCount())
-                .reduce(0L, Long::sum);
-    }
-
-    public List<ItemDto> getCartItems() {
-        return cart.entrySet().stream()
-                .map(entry -> {
-                    Item item = itemRepository.findById(entry.getKey())
-                            .orElseThrow(() -> new RuntimeException("Item not found"));
-                    ItemDto dto = itemMapper.toDto(item);
-                    dto.setCount(entry.getValue());
+    public List<ItemDto> getCart(String sessionId) {
+        List<CartItem> items = cartItemRepository.findBySessionId(sessionId);
+        return items.stream()
+                .map(item -> {
+                    ItemDto dto = itemMapper.toDto(item.getItem());
+                    dto.setCount(item.getQuantity());
                     return dto;
                 })
-                .collect(Collectors.toList());
+                .toList();
     }
 
-    public List<OrderItem> prepareOrderItems() {
-        return cart.entrySet().stream()
-                .map(entry -> {
-                    Item item = itemRepository.findById(entry.getKey())
-                            .orElseThrow(() -> new RuntimeException("Item not found"));
-                    return new OrderItem()
-                            .setItem(item)
-                            .setCount(entry.getValue());
-                })
-                .collect(Collectors.toList());
-    }
+    public void addItem(String sessionId, Long itemId) {
 
-    public void addToCart(Long itemId, int quantity) {
-        cart.put(itemId, cart.getOrDefault(itemId, 0) + quantity);
-    }
+        Item item = itemRepository.findById(itemId)
+                .orElseThrow();
 
-    public void removeFromCart(Item item) {
-        cart.remove(item.getId());
-    }
+        CartItem cartItem = cartItemRepository
+                .findBySessionIdAndItemId(sessionId, itemId)
+                .orElse(null);
 
-    public void minusFromCart(Item item) {
-        if (cart.containsKey(item.getId())) {
-            cart.put(item.getId(), Math.max((cart.get(item.getId()) - 1), 0));
+        if (cartItem == null) {
+
+            cartItem = new CartItem();
+            cartItem.setSessionId(sessionId);
+            cartItem.setItem(item);
+            cartItem.setQuantity(1);
+
+        } else {
+
+            cartItem.setQuantity(cartItem.getQuantity() + 1);
+
         }
 
+        cartItemRepository.save(cartItem);
     }
 
-    public void plusFromCart(Item item) {
-        if (cart.containsKey(item.getId())) {
-            cart.put(item.getId(), Math.max((cart.get(item.getId()) + 1), 0));
+    public void removeItem(String sessionId, Long itemId) {
+
+        CartItem cartItem = cartItemRepository
+                .findBySessionIdAndItemId(sessionId, itemId)
+                .orElseThrow();
+
+        cartItemRepository.delete(cartItem);
+    }
+
+    public void clearCart(String sessionId) {
+        cartItemRepository.deleteBySessionId(sessionId);
+    }
+
+    @Transactional
+    public void updateQuantity(String sessionId, Long itemId, String action) {
+
+        CartItem cartItem = cartItemRepository
+                .findBySessionIdAndItemId(sessionId, itemId)
+                .orElse(null);
+
+        if (cartItem == null) {
+            addItem(sessionId, itemId);
+            return;
         }
-    }
 
-    public void clearCart() {
-        cart.clear();
-    }
+        int quantity = cartItem.getQuantity();
 
-    public int getItemCount(Item item) {
-        return cart.getOrDefault(item.getId(), 0);
-    }
-
-    public void updateCount(Item item, String action) {
-        for (Long i : cart.keySet()) {
-            if (i.equals(item.getId())) {
-                if ("PLUS".equals(action)) plusFromCart(item);
-                if ("MINUS".equals(action)) minusFromCart(item);
-                if ("DELETE".equals(action)) removeFromCart(item);
-                return;
+        if ("PLUS".equals(action)) {
+            cartItem.setQuantity(quantity + 1);
+            cartItemRepository.save(cartItem);
+        } else if ("MINUS".equals(action)) {
+            if (quantity > 1) {
+                cartItem.setQuantity(quantity - 1);
+                cartItemRepository.save(cartItem);
+            } else {
+                cartItemRepository.delete(cartItem);
             }
+        } else if ("DELETE".equals(action)) {
+            cartItemRepository.delete(cartItem);
         }
-        addToCart(item.getId(), 1);
+
+
     }
 }

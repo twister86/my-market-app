@@ -44,7 +44,7 @@ class ItemControllerTest {
         ItemDto itemDto = new ItemDto()
                 .setId(1L);
 
-        when(itemService.findAll(any(), any(), anyInt(), anyInt())).thenReturn(new PageImpl<>(List.of(itemDto)));
+        when(itemService.findAll(any(), any(), anyInt(), anyInt(), any())).thenReturn(new PageImpl<>(List.of(itemDto)));
 
         mockMvc.perform(get("/items"))
                 .andExpect(status().isOk());

@@ -1,5 +1,6 @@
 package ru.yandex.practicum.mymarket.controller;
 
+import jakarta.servlet.http.HttpSession;
 import lombok.AllArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.stereotype.Controller;
@@ -28,9 +29,10 @@ public class ItemController {
             @RequestParam(required = false, defaultValue = "NO") String sort,
             @RequestParam(required = false, defaultValue = "1") int pageNumber,
             @RequestParam(required = false, defaultValue = "5") int pageSize,
-            Model model) {
+            Model model,
+            HttpSession session) {
 
-        Page<ItemDto> itemDtoPage = itemService.findAll(search, sort, pageNumber, pageSize);
+        Page<ItemDto> itemDtoPage = itemService.findAll(search, sort, pageNumber, pageSize, session.getId());
         List<ItemDto> items = itemDtoPage.getContent();
 
         List<List<ItemDto>> groupedItems = new ArrayList<>();
@@ -54,9 +56,9 @@ public class ItemController {
     }
 
     @PostMapping("/{id}")
-    public String updateItemCount(@PathVariable Long id, @RequestParam String action) {
-        Item item = itemService.findItemById(id);
-        if (item != null) cartService.updateCount(item, action);
+    public String updateItemCount(@PathVariable Long id, @RequestParam String action, HttpSession session) {
+        String sessionId = session.getId();
+        if (id != null) cartService.updateQuantity(sessionId, id, action);
         return "redirect:/items/" + id;
     }
 
@@ -67,13 +69,11 @@ public class ItemController {
             @RequestParam(required = false) String search,
             @RequestParam(required = false, defaultValue = "NO") String sort,
             @RequestParam(required = false, defaultValue = "1") int pageNumber,
-            @RequestParam(required = false, defaultValue = "5") int pageSize
+            @RequestParam(required = false, defaultValue = "5") int pageSize,
+            HttpSession session
             ) {
-        if ("PLUS".equals(action)) {
-            cartService.addToCart(id, 1);
-        } else if ("MINUS".equals(action)) {
-            cartService.updateCount(itemService.findItemById(id), action);
-        }
+        String sessionId = session.getId();
+        if (id != null) cartService.updateQuantity(sessionId, id, action);
 
         return "redirect:/items?search=" + (search != null ? search : "") +
                 "&sort=" + sort +
