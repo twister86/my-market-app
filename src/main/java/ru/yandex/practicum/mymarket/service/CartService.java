@@ -1,16 +1,15 @@
 package ru.yandex.practicum.mymarket.service;
 
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.r2dbc.core.R2dbcEntityTemplate;
+import org.springframework.r2dbc.core.DatabaseClient;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
-import ru.yandex.practicum.mymarket.dto.ItemDto;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 import ru.yandex.practicum.mymarket.entity.CartItem;
 import ru.yandex.practicum.mymarket.entity.Item;
-import ru.yandex.practicum.mymarket.mapper.ItemMapper;
 import ru.yandex.practicum.mymarket.repository.CartItemRepository;
 import ru.yandex.practicum.mymarket.repository.ItemRepository;
-
-import java.util.List;
 
 @Service
 @RequiredArgsConstructor
@@ -18,86 +17,64 @@ public class CartService {
 
     private final CartItemRepository cartItemRepository;
     private final ItemRepository itemRepository;
+    private final R2dbcEntityTemplate template;
 
-    private final ItemMapper itemMapper;
+    public Flux<Item> getCartItems() {
+        return cartItemRepository.findAll()
+                .flatMap(ci -> itemRepository.findById(ci.getId())
+                        .map(item -> {
+                            item.setCount(ci.getCount());
+                            return item;
+                        }));
+    }
 
-    public List<ItemDto> getCart(String sessionId) {
-        List<CartItem> items = cartItemRepository.findBySessionId(sessionId);
-        return items.stream()
-                .map(item -> {
-                    ItemDto dto = itemMapper.toDto(item.getItem());
-                    dto.setCount(item.getQuantity());
-                    return dto;
+    public Mono<Long> getTotal() {
+        return getCartItems()
+                .map(item -> item.getPrice() * item.getCount())
+                .reduce(0L, Long::sum);
+    }
+
+    public Mono<Void> updateCart(Long itemId, String action) {
+        return cartItemRepository.findById(itemId)
+                .flatMap(existing -> {
+                    int newCount = switch (action) {
+                        case "PLUS"   -> existing.getCount() + 1;
+                        case "MINUS"  -> Math.max(0, existing.getCount() - 1);
+                        case "DELETE" -> 0;
+                        default       -> existing.getCount();
+                    };
+                    if (newCount <= 0) {
+                        return cartItemRepository.deleteById(itemId)
+                                .thenReturn(Boolean.TRUE);
+                    }
+                    // version != null → Spring Data сделает UPDATE
+                    existing.setCount(newCount);
+                    return cartItemRepository.save(existing)
+                            .thenReturn(Boolean.TRUE);
                 })
-                .toList();
+                .switchIfEmpty(Mono.defer(() -> {
+                    if (!"PLUS".equals(action)) {
+                        return Mono.just(Boolean.FALSE);
+                    }
+                    // Явный INSERT — template.insert() всегда INSERT независимо от id
+                    return template.insert(CartItem.class)
+                            .using(new CartItem(itemId, 1))
+                            .thenReturn(Boolean.FALSE);
+                }))
+                .then();
     }
 
-    public void addItem(String sessionId, Long itemId) {
-
-        Item item = itemRepository.findById(itemId)
-                .orElseThrow();
-
-        CartItem cartItem = cartItemRepository
-                .findBySessionIdAndItemId(sessionId, itemId)
-                .orElse(null);
-
-        if (cartItem == null) {
-
-            cartItem = new CartItem();
-            cartItem.setSessionId(sessionId);
-            cartItem.setItem(item);
-            cartItem.setQuantity(1);
-
-        } else {
-
-            cartItem.setQuantity(cartItem.getQuantity() + 1);
-
-        }
-
-        cartItemRepository.save(cartItem);
+    public Mono<Integer> getCount(Long itemId) {
+        return cartItemRepository.findById(itemId)
+                .map(CartItem::getCount)
+                .defaultIfEmpty(0);
     }
 
-    public void removeItem(String sessionId, Long itemId) {
-
-        CartItem cartItem = cartItemRepository
-                .findBySessionIdAndItemId(sessionId, itemId)
-                .orElseThrow();
-
-        cartItemRepository.delete(cartItem);
+    public Mono<Void> clear() {
+        return cartItemRepository.deleteAll();
     }
 
-    public void clearCart(String sessionId) {
-        cartItemRepository.deleteBySessionId(sessionId);
-    }
-
-    @Transactional
-    public void updateQuantity(String sessionId, Long itemId, String action) {
-
-        CartItem cartItem = cartItemRepository
-                .findBySessionIdAndItemId(sessionId, itemId)
-                .orElse(null);
-
-        if (cartItem == null) {
-            addItem(sessionId, itemId);
-            return;
-        }
-
-        int quantity = cartItem.getQuantity();
-
-        if ("PLUS".equals(action)) {
-            cartItem.setQuantity(quantity + 1);
-            cartItemRepository.save(cartItem);
-        } else if ("MINUS".equals(action)) {
-            if (quantity > 1) {
-                cartItem.setQuantity(quantity - 1);
-                cartItemRepository.save(cartItem);
-            } else {
-                cartItemRepository.delete(cartItem);
-            }
-        } else if ("DELETE".equals(action)) {
-            cartItemRepository.delete(cartItem);
-        }
-
-
+    public Flux<CartItem> getAllCartItems() {
+        return cartItemRepository.findAll();
     }
 }

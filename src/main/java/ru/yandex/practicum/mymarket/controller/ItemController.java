@@ -1,85 +1,90 @@
 package ru.yandex.practicum.mymarket.controller;
 
-import jakarta.servlet.http.HttpSession;
-import lombok.AllArgsConstructor;
-import org.springframework.data.domain.Page;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.*;
-import ru.yandex.practicum.mymarket.config.Paging;
-import ru.yandex.practicum.mymarket.dto.ItemDto;
-import ru.yandex.practicum.mymarket.entity.Item;
+import org.springframework.web.server.ServerWebExchange;
+import reactor.core.publisher.Mono;
+import ru.yandex.practicum.mymarket.dto.ItemForm;
 import ru.yandex.practicum.mymarket.service.CartService;
 import ru.yandex.practicum.mymarket.service.ItemService;
 
-import java.util.ArrayList;
-import java.util.List;
-
 @Controller
-@RequestMapping("/items")
-@AllArgsConstructor
+@RequiredArgsConstructor
 public class ItemController {
 
     private final ItemService itemService;
     private final CartService cartService;
 
-    @GetMapping
-    public String getItems(
-            @RequestParam(required = false) String search,
-            @RequestParam(required = false, defaultValue = "NO") String sort,
-            @RequestParam(required = false, defaultValue = "1") int pageNumber,
-            @RequestParam(required = false, defaultValue = "5") int pageSize,
-            Model model,
-            HttpSession session) {
+    // ===== Витрина =====
+    @GetMapping({"/", "/items"})
+    public Mono<String> items(
+            @RequestParam(defaultValue = "") String search,
+            @RequestParam(defaultValue = "NO") String sort,
+            @RequestParam(defaultValue = "1") int pageNumber,
+            @RequestParam(defaultValue = "5") int pageSize,
+            Model model) {
 
-        Page<ItemDto> itemDtoPage = itemService.findAll(search, sort, pageNumber, pageSize, session.getId());
-        List<ItemDto> items = itemDtoPage.getContent();
+        return Mono.zip(
+                itemService.getItemsPage(search, sort, pageNumber, pageSize),
+                itemService.buildPaging(search, sort, pageNumber, pageSize)
+        ).doOnNext(tuple -> {
+            model.addAttribute("items", tuple.getT1());
+            model.addAttribute("paging", tuple.getT2());
+            model.addAttribute("search", search);
+            model.addAttribute("sort", sort);
+        }).thenReturn("items");
+    }
 
-        List<List<ItemDto>> groupedItems = new ArrayList<>();
-        for (int i = 0; i < items.size(); i += 3) {
-            List<ItemDto> row = items.subList(i, Math.min(i + 3, items.size()));
-            groupedItems.add(row);
+    @PostMapping("/items")
+    public Mono<String> updateCartFromItems(@ModelAttribute ItemForm form) {
+        Long id = form.getId();
+        String action = form.getAction();
+        String search = form.getSearch();
+        String sort = form.getSort();
+        int pageNumber = form.getPageNumber();
+        int pageSize = form.getPageSize();
+
+        if (id == null || action == null || action.isBlank()) {
+            // Редирект на items без изменений
+            return Mono.just("redirect:/items?search=" + search
+                    + "&sort=" + sort
+                    + "&pageNumber=" + pageNumber
+                    + "&pageSize=" + pageSize);
         }
-        model.addAttribute("items", groupedItems);
-        model.addAttribute("search", search);
-        model.addAttribute("sort", sort);
-        model.addAttribute("paging", new Paging(pageSize, pageNumber, itemDtoPage.hasPrevious(), itemDtoPage.hasNext()));
 
-        return "items";
+        return cartService.updateCart(id, action)
+                .thenReturn("redirect:/items?search=" + search
+                        + "&sort=" + sort
+                        + "&pageNumber=" + pageNumber
+                        + "&pageSize=" + pageSize);
     }
 
-    @GetMapping("/{id}")
-    public String getItem(@PathVariable Long id, Model model) {
-        ItemDto item = itemService.findById(id);
-        model.addAttribute("item", item);
-        return "item";
+    // ===== Карточка товара =====
+
+    @GetMapping("/items/{id}")
+    public Mono<String> item(@PathVariable Long id, Model model) {
+        return itemService.getItem(id)
+                .doOnNext(item -> model.addAttribute("item", item))
+                .thenReturn("item");
     }
 
-    @PostMapping("/{id}")
-    public String updateItemCount(@PathVariable Long id, @RequestParam String action, HttpSession session) {
-        String sessionId = session.getId();
-        if (id != null) cartService.updateQuantity(sessionId, id, action);
-        return "redirect:/items/" + id;
+    @PostMapping("/items/{id}")
+    public Mono<String> updateCartFromItem(
+            @PathVariable Long id,
+            ServerWebExchange exchange,
+            Model model) {
+
+        return exchange.getFormData().flatMap(form -> {
+            String action = form.getFirst("action");
+            Mono<Void> update = (action != null && !action.isBlank())
+                    ? cartService.updateCart(id, action)
+                    : Mono.empty();
+            return update
+                    .then(itemService.getItem(id))
+                    .doOnNext(item -> model.addAttribute("item", item))
+                    .thenReturn("item");
+        });
     }
-
-    @PostMapping
-    public String updateCart(
-            @RequestParam Long id,
-            @RequestParam String action,
-            @RequestParam(required = false) String search,
-            @RequestParam(required = false, defaultValue = "NO") String sort,
-            @RequestParam(required = false, defaultValue = "1") int pageNumber,
-            @RequestParam(required = false, defaultValue = "5") int pageSize,
-            HttpSession session
-            ) {
-        String sessionId = session.getId();
-        if (id != null) cartService.updateQuantity(sessionId, id, action);
-
-        return "redirect:/items?search=" + (search != null ? search : "") +
-                "&sort=" + sort +
-                "&pageNumber=" + pageNumber +
-                "&pageSize=" + pageSize;
-    }
-
-
 }

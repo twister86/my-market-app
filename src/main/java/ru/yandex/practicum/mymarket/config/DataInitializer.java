@@ -1,31 +1,111 @@
 package ru.yandex.practicum.mymarket.config;
 
 import lombok.RequiredArgsConstructor;
-import org.springframework.boot.CommandLineRunner;
+import lombok.extern.slf4j.Slf4j;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.event.EventListener;
+import org.springframework.core.io.Resource;
+import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
+import org.springframework.data.r2dbc.core.R2dbcEntityTemplate;
 import org.springframework.stereotype.Component;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 import ru.yandex.practicum.mymarket.entity.Item;
 import ru.yandex.practicum.mymarket.repository.ItemRepository;
 
+import java.util.Arrays;
+import java.util.Comparator;
+import java.util.List;
+import java.util.Objects;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+/**
+ * Первоначальное заполнение таблицы items при старте приложения.
+ *
+ * Сканирует каталог resources/static/images/ и для каждого файла вида
+ * {id}.jpg создаёт запись в таблице items, если таблица пуста.
+ *
+ * Соответствие: файл 1.jpg → item с id=1, imgPath="/images/1.jpg"
+ */
+@Slf4j
 @Component
 @RequiredArgsConstructor
-public class DataInitializer implements CommandLineRunner {
+public class DataInitializer {
+
+    private static final Pattern IMAGE_PATTERN = Pattern.compile("^(\\d+)\\.jpg$", Pattern.CASE_INSENSITIVE);
+    private static final String IMAGES_LOCATION = "classpath:static/*.jpg";
+    private static final java.util.Random RANDOM = new java.util.Random();
+
 
     private final ItemRepository itemRepository;
+    private final R2dbcEntityTemplate template;
 
-    @Override
-    public void run(String... args) throws Exception {
-        // Проверяем, чтобы не дублировать данные при перезапуске
-        if (itemRepository.count() == 0) {
-            for (int i = 1; i <= 15; i++) {
-                Item item = new Item();
-                item.setTitle("Item " + i);
-                item.setDescription("Описание товара " + i);
-                item.setImgPath("/images/" + i + ".jpg");
-                item.setPrice((long) (Math.random() * (10000 - 100))); // пример цены
-                item.setCount(0); // по умолчанию в корзине нет
-                itemRepository.save(item);
-            }
-            System.out.println("✅ 15 items initialized in database");
+    @EventListener(ApplicationReadyEvent.class)
+    public void init() {
+        itemRepository.count()
+                .flatMap(count -> {
+                    if (count > 0) {
+                        log.info("DataInitializer: таблица items уже содержит {} записей, пропускаем.", count);
+                        return Mono.empty();
+                    }
+                    log.info("DataInitializer: таблица items пуста, начинаем заполнение...");
+                    return populateFromImages();
+                })
+                .subscribe(
+                        null,
+                        err -> log.error("DataInitializer: ошибка при заполнении таблицы items", err)
+                );
+    }
+
+    private Mono<Void> populateFromImages() {
+        List<Item> items = scanImages();
+
+        if (items.isEmpty()) {
+            log.warn("DataInitializer: изображения не найдены в {}", IMAGES_LOCATION);
+            return Mono.empty();
+        }
+
+        return Flux.fromIterable(items)
+                // insert() всегда выполняет INSERT, игнорируя наличие @Id
+                .concatMap(item -> template.insert(Item.class).using(item))
+                .doOnNext(saved -> log.info("DataInitializer: сохранён товар id={}, imgPath={}",
+                        saved.getId(), saved.getImgPath()))
+                .then()
+                .doOnSuccess(v -> log.info("DataInitializer: заполнение завершено, добавлено {} товаров.", items.size()));
+    }
+
+
+    private long randomPrice() {
+        // Цена кратна 100, в диапазоне 1000–10000
+        return (RANDOM.nextInt(91) + 10) * 100L;
+    }
+
+    private List<Item> scanImages() {
+        PathMatchingResourcePatternResolver resolver = new PathMatchingResourcePatternResolver();
+        try {
+            Resource[] resources = resolver.getResources(IMAGES_LOCATION);
+            return Arrays.stream(resources)
+                    .map(Resource::getFilename)
+                    .filter(Objects::nonNull)
+                    .map(filename -> {
+                        Matcher m = IMAGE_PATTERN.matcher(filename);
+                        if (!m.matches()) return null;
+                        long id = Long.parseLong(m.group(1));
+                        return Item.builder()
+                                .id(id)
+                                .title("Товар " + id)
+                                .description("Описание товара " + id)
+                                .imgPath("/images/" + filename)
+                                .price(randomPrice())
+                                .build();
+                    })
+                    .filter(Objects::nonNull)
+                    .sorted(Comparator.comparingLong(Item::getId))
+                    .toList();
+        } catch (Exception e) {
+            log.error("DataInitializer: не удалось просканировать {}", IMAGES_LOCATION, e);
+            return List.of();
         }
     }
 }
