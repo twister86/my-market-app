@@ -20,6 +20,8 @@ public class Order {
     @Id
     private Long id;
 
+    private String sessionId;
+
     private long totalSum;
 
     @Transient

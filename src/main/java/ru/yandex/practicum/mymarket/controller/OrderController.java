@@ -4,7 +4,10 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.server.ServerWebExchange;
+import org.springframework.web.server.WebSession;
 import reactor.core.publisher.Mono;
+import ru.yandex.practicum.mymarket.config.SessionUtils;
 import ru.yandex.practicum.mymarket.service.OrderService;
 
 @Controller
@@ -14,11 +17,13 @@ public class OrderController {
     private final OrderService orderService;
 
     @GetMapping("/orders")
-    public Mono<String> orders(Model model) {
-        return orderService.getAllOrders()
-                .collectList()
-                .doOnNext(orders -> model.addAttribute("orders", orders))
-                .thenReturn("orders");
+    public Mono<String> orders(ServerWebExchange exchange, Model model) {
+        return SessionUtils.getOrCreateSessionId(exchange).flatMap(sessionId ->
+                orderService.getAllOrders(sessionId)
+                        .collectList()
+                        .doOnNext(orders -> model.addAttribute("orders", orders))
+                        .thenReturn("orders")
+        );
     }
 
     @GetMapping("/orders/{id}")
@@ -35,9 +40,11 @@ public class OrderController {
                 .thenReturn("order");
     }
 
-    @PostMapping("/buy")
-    public Mono<String> buy() {
-        return orderService.checkout()
-                .map(id -> "redirect:/orders/" + id + "?newOrder=true");
+    @PostMapping("/orders/buy")
+    public Mono<String> buy(ServerWebExchange exchange) {
+        return SessionUtils.getOrCreateSessionId(exchange).flatMap(sessionId ->
+                orderService.checkout(sessionId)
+                        .map(id -> "redirect:/orders/" + id + "?newOrder=true")
+        );
     }
 }

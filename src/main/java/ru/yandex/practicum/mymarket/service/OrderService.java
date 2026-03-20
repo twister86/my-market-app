@@ -19,10 +19,9 @@ public class OrderService {
     private final ItemRepository itemRepository;
     private final CartService cartService;
 
-    /** Оформить заказ из корзины */
-    public Mono<Long> checkout() {
-        return cartService.getAllCartItems()
-                .flatMap(ci -> itemRepository.findById(ci.getId())
+    public Mono<Long> checkout(String sessionId) {
+        return cartService.getAllCartItems(sessionId)
+                .flatMap(ci -> itemRepository.findById(ci.getItemId())
                         .map(item -> OrderItem.builder()
                                 .itemId(item.getId())
                                 .title(item.getTitle())
@@ -34,24 +33,25 @@ public class OrderService {
                     long total = orderItems.stream()
                             .mapToLong(oi -> oi.getPrice() * oi.getCount())
                             .sum();
-                    Order order = Order.builder().totalSum(total).build();
+                    Order order = Order.builder()
+                            .sessionId(sessionId)
+                            .totalSum(total)
+                            .build();
                     return orderRepository.save(order)
                             .flatMap(savedOrder -> {
                                 orderItems.forEach(oi -> oi.setOrderId(savedOrder.getId()));
                                 return orderItemRepository.saveAll(orderItems)
-                                        .then(cartService.clear())
+                                        .then(cartService.clear(sessionId))
                                         .thenReturn(savedOrder.getId());
                             });
                 });
     }
 
-    /** Все заказы с позициями */
-    public Flux<Order> getAllOrders() {
-        return orderRepository.findAll()
+    public Flux<Order> getAllOrders(String sessionId) {
+        return orderRepository.findBySessionId(sessionId)
                 .flatMap(this::enrichOrder);
     }
 
-    /** Заказ по id с позициями */
     public Mono<Order> getOrder(Long id) {
         return orderRepository.findById(id)
                 .flatMap(this::enrichOrder);

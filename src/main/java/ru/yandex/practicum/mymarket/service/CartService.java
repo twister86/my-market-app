@@ -19,23 +19,23 @@ public class CartService {
     private final ItemRepository itemRepository;
     private final R2dbcEntityTemplate template;
 
-    public Flux<Item> getCartItems() {
-        return cartItemRepository.findAll()
-                .flatMap(ci -> itemRepository.findById(ci.getId())
+    public Flux<Item> getCartItems(String sessionId) {
+        return cartItemRepository.findBySessionId(sessionId)
+                .flatMap(ci -> itemRepository.findById(ci.getItemId())
                         .map(item -> {
                             item.setCount(ci.getCount());
                             return item;
                         }));
     }
 
-    public Mono<Long> getTotal() {
-        return getCartItems()
+    public Mono<Long> getTotal(String sessionId) {
+        return getCartItems(sessionId)
                 .map(item -> item.getPrice() * item.getCount())
                 .reduce(0L, Long::sum);
     }
 
-    public Mono<Void> updateCart(Long itemId, String action) {
-        return cartItemRepository.findById(itemId)
+    public Mono<Void> updateCart(Long itemId, String action, String sessionId) {
+        return cartItemRepository.findByItemIdAndSessionId(itemId, sessionId)
                 .flatMap(existing -> {
                     int newCount = switch (action) {
                         case "PLUS"   -> existing.getCount() + 1;
@@ -44,10 +44,9 @@ public class CartService {
                         default       -> existing.getCount();
                     };
                     if (newCount <= 0) {
-                        return cartItemRepository.deleteById(itemId)
+                        return cartItemRepository.deleteByItemIdAndSessionId(itemId, sessionId)
                                 .thenReturn(Boolean.TRUE);
                     }
-                    // version != null → Spring Data сделает UPDATE
                     existing.setCount(newCount);
                     return cartItemRepository.save(existing)
                             .thenReturn(Boolean.TRUE);
@@ -56,25 +55,29 @@ public class CartService {
                     if (!"PLUS".equals(action)) {
                         return Mono.just(Boolean.FALSE);
                     }
-                    // Явный INSERT — template.insert() всегда INSERT независимо от id
+                    CartItem newItem = CartItem.builder()
+                            .itemId(itemId)
+                            .sessionId(sessionId)
+                            .count(1)
+                            .build();
                     return template.insert(CartItem.class)
-                            .using(new CartItem(itemId, 1))
+                            .using(newItem)
                             .thenReturn(Boolean.FALSE);
                 }))
                 .then();
     }
 
-    public Mono<Integer> getCount(Long itemId) {
-        return cartItemRepository.findById(itemId)
+    public Mono<Integer> getCount(Long itemId, String sessionId) {
+        return cartItemRepository.findByItemIdAndSessionId(itemId, sessionId)
                 .map(CartItem::getCount)
                 .defaultIfEmpty(0);
     }
 
-    public Mono<Void> clear() {
-        return cartItemRepository.deleteAll();
+    public Mono<Void> clear(String sessionId) {
+        return cartItemRepository.deleteBySessionId(sessionId);
     }
 
-    public Flux<CartItem> getAllCartItems() {
-        return cartItemRepository.findAll();
+    public Flux<CartItem> getAllCartItems(String sessionId) {
+        return cartItemRepository.findBySessionId(sessionId);
     }
 }

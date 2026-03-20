@@ -19,18 +19,15 @@ public class ItemService {
     private final ItemRepository itemRepository;
     private final CartService cartService;
 
-    /**
-     * Получить страницу товаров с учётом поиска, сортировки и пагинации.
-     * Возвращает список списков по 3 товара (для сетки 3 колонки).
-     */
     public Mono<List<List<Item>>> getItemsPage(String search, String sort,
-                                               int pageNumber, int pageSize) {
+                                               int pageNumber, int pageSize,
+                                               String sessionId) {
         Flux<Item> source = (search != null && !search.isBlank())
                 ? itemRepository.findByTitleOrDescriptionContainingIgnoreCase(search)
                 : itemRepository.findAll();
 
         return source
-                .concatMap(item -> cartService.getCount(item.getId())
+                .concatMap(item -> cartService.getCount(item.getId(), sessionId)
                         .map(count -> {
                             item.setCount(count);
                             return item;
@@ -40,14 +37,12 @@ public class ItemService {
     }
 
     private List<List<Item>> toPagedRows(List<Item> items, String sort, int pageNumber, int pageSize) {
-        // Сортировка
         if ("ALPHA".equals(sort)) {
             items.sort(Comparator.comparing(Item::getTitle));
         } else if ("PRICE".equals(sort)) {
             items.sort(Comparator.comparingLong(Item::getPrice));
         }
 
-        // Пагинация
         int fromIndex = (pageNumber - 1) * pageSize;
         if (fromIndex >= items.size()) {
             return new ArrayList<>();
@@ -55,14 +50,12 @@ public class ItemService {
         int toIndex = Math.min(fromIndex + pageSize, items.size());
         List<Item> page = new ArrayList<>(items.subList(fromIndex, toIndex));
 
-        // Дополняем заглушками до кратного 3
         while (page.size() % 3 != 0) {
             Item stub = new Item();
             stub.setId(-1L);
             page.add(stub);
         }
 
-        // Разбиваем на строки по 3
         List<List<Item>> rows = new ArrayList<>();
         for (int i = 0; i < page.size(); i += 3) {
             rows.add(page.subList(i, i + 3));
@@ -70,7 +63,6 @@ public class ItemService {
         return rows;
     }
 
-    /** Общее кол-во товаров (с учётом поиска) — для пагинации */
     public Mono<Long> countItems(String search) {
         if (search != null && !search.isBlank()) {
             return itemRepository.findByTitleOrDescriptionContainingIgnoreCase(search).count();
@@ -78,22 +70,19 @@ public class ItemService {
         return itemRepository.count();
     }
 
-    /** Получить товар по id с количеством в корзине */
-    public Mono<Item> getItem(Long id) {
+    public Mono<Item> getItem(Long id, String sessionId) {
         return itemRepository.findById(id)
-                .flatMap(item -> cartService.getCount(item.getId())
+                .flatMap(item -> cartService.getCount(item.getId(), sessionId)
                         .map(count -> {
                             item.setCount(count);
                             return item;
                         }));
     }
 
-    /** Сохранить новый товар */
     public Mono<Item> save(Item item) {
         return itemRepository.save(item);
     }
 
-    /** Построить объект пагинации */
     public Mono<PagingDto> buildPaging(String search, String sort,
                                        int pageNumber, int pageSize) {
         return countItems(search).map(total -> {
