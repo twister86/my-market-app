@@ -5,6 +5,7 @@ import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import ru.yandex.practicum.mymarket.dto.PagingDto;
+import ru.yandex.practicum.mymarket.dto.SortType;
 import ru.yandex.practicum.mymarket.entity.Item;
 import ru.yandex.practicum.mymarket.repository.ItemRepository;
 
@@ -22,6 +23,12 @@ public class ItemService {
     public Mono<List<List<Item>>> getItemsPage(String search, String sort,
                                                int pageNumber, int pageSize,
                                                String sessionId) {
+        return getItemsPage(search, SortType.fromString(sort), pageNumber, pageSize, sessionId);
+    }
+
+    public Mono<List<List<Item>>> getItemsPage(String search, SortType sort,
+                                               int pageNumber, int pageSize,
+                                               String sessionId) {
         Flux<Item> source = (search != null && !search.isBlank())
                 ? itemRepository.findByTitleOrDescriptionContainingIgnoreCase(search)
                 : itemRepository.findAll();
@@ -36,11 +43,11 @@ public class ItemService {
                 .map(items -> toPagedRows(items, sort, pageNumber, pageSize));
     }
 
-    private List<List<Item>> toPagedRows(List<Item> items, String sort, int pageNumber, int pageSize) {
-        if ("ALPHA".equals(sort)) {
-            items.sort(Comparator.comparing(Item::getTitle));
-        } else if ("PRICE".equals(sort)) {
-            items.sort(Comparator.comparingLong(Item::getPrice));
+    private List<List<Item>> toPagedRows(List<Item> items, SortType sort, int pageNumber, int pageSize) {
+        switch (sort) {
+            case ALPHA -> items.sort(Comparator.comparing(Item::getTitle));
+            case PRICE -> items.sort(Comparator.comparingLong(Item::getPrice));
+            default    -> { /* NO — без сортировки */ }
         }
 
         int fromIndex = (pageNumber - 1) * pageSize;

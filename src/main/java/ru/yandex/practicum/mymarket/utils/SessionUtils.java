@@ -1,4 +1,4 @@
-package ru.yandex.practicum.mymarket.config;
+package ru.yandex.practicum.mymarket.utils;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpCookie;

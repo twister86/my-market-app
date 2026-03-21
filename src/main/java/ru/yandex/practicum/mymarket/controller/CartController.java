@@ -7,9 +7,8 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.server.ServerWebExchange;
-import org.springframework.web.server.WebSession;
 import reactor.core.publisher.Mono;
-import ru.yandex.practicum.mymarket.config.SessionUtils;
+import ru.yandex.practicum.mymarket.utils.SessionUtils;
 import ru.yandex.practicum.mymarket.service.CartService;
 
 @Controller
