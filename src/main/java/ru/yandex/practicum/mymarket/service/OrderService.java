@@ -2,71 +2,67 @@ package ru.yandex.practicum.mymarket.service;
 
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
-import ru.yandex.practicum.mymarket.dto.OrderDto;
-import ru.yandex.practicum.mymarket.entity.CartItem;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 import ru.yandex.practicum.mymarket.entity.Order;
 import ru.yandex.practicum.mymarket.entity.OrderItem;
-import ru.yandex.practicum.mymarket.mapper.ItemMapper;
-import ru.yandex.practicum.mymarket.mapper.OrderMapper;
-import ru.yandex.practicum.mymarket.repository.CartItemRepository;
+import ru.yandex.practicum.mymarket.repository.ItemRepository;
+import ru.yandex.practicum.mymarket.repository.OrderItemRepository;
 import ru.yandex.practicum.mymarket.repository.OrderRepository;
-
-import java.util.ArrayList;
-import java.util.List;
 
 @Service
 @RequiredArgsConstructor
 public class OrderService {
 
-    private final CartItemRepository cartItemRepository;
     private final OrderRepository orderRepository;
-    private final OrderMapper orderMapper;
+    private final OrderItemRepository orderItemRepository;
+    private final ItemRepository itemRepository;
+    private final CartService cartService;
 
-    @Transactional
-    public Long checkout(String sessionId) {
-
-        List<CartItem> cartItems = cartItemRepository.findBySessionId(sessionId);
-
-        if (cartItems.isEmpty()) {
-            throw new RuntimeException("Cart is empty");
-        }
-
-        Order order = new Order();
-        order.setSessionId(sessionId);
-
-        long total = 0;
-        List<OrderItem> orderItems = new ArrayList<>();
-        for (CartItem cartItem : cartItems) {
-
-            OrderItem orderItem = new OrderItem();
-            orderItem.setOrder(order);
-            orderItem.setItem(cartItem.getItem());
-            orderItem.setCount(cartItem.getQuantity());
-            orderItems.add(orderItem);
-
-            total += cartItem.getItem().getPrice() * cartItem.getQuantity();
-        }
-        order.setItems(orderItems);
-        order.setTotalSum(total);
-
-        Order savedOrder = orderRepository.save(order);
-
-        cartItemRepository.deleteBySessionId(sessionId);
-
-        return savedOrder.getId();
+    public Mono<Long> checkout(String sessionId) {
+        return cartService.getAllCartItems(sessionId)
+                .flatMap(ci -> itemRepository.findById(ci.getItemId())
+                        .map(item -> OrderItem.builder()
+                                .itemId(item.getId())
+                                .title(item.getTitle())
+                                .price(item.getPrice())
+                                .count(ci.getCount())
+                                .build()))
+                .collectList()
+                .flatMap(orderItems -> {
+                    long total = orderItems.stream()
+                            .mapToLong(oi -> oi.getPrice() * oi.getCount())
+                            .sum();
+                    Order order = Order.builder()
+                            .sessionId(sessionId)
+                            .totalSum(total)
+                            .build();
+                    return orderRepository.save(order)
+                            .flatMap(savedOrder -> {
+                                orderItems.forEach(oi -> oi.setOrderId(savedOrder.getId()));
+                                return orderItemRepository.saveAll(orderItems)
+                                        .then(cartService.clear(sessionId))
+                                        .thenReturn(savedOrder.getId());
+                            });
+                });
     }
 
-    public List<OrderDto> getOrders(String sessionId) {
-        return orderRepository.findBySessionId(sessionId).stream()
-                .map(orderMapper::toDto)
-                .toList();
+    public Flux<Order> getAllOrders(String sessionId) {
+        return orderRepository.findBySessionId(sessionId)
+                .flatMap(this::enrichOrder);
     }
 
-    public OrderDto getOrderById(String sessionId, Long orderId) {
+    public Mono<Order> getOrder(Long id) {
+        return orderRepository.findById(id)
+                .flatMap(this::enrichOrder);
+    }
 
-        return orderMapper.toDto(orderRepository
-                .findByIdAndSessionId(orderId, sessionId)
-                .orElseThrow(() -> new RuntimeException("Order not found")));
+    private Mono<Order> enrichOrder(Order order) {
+        return orderItemRepository.findByOrderId(order.getId())
+                .collectList()
+                .map(items -> {
+                    order.setItems(items);
+                    return order;
+                });
     }
 }

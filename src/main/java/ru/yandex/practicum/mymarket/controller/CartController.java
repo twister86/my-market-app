@@ -1,17 +1,15 @@
 package ru.yandex.practicum.mymarket.controller;
 
-import jakarta.servlet.http.HttpSession;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
-import org.springframework.web.bind.annotation.*;
-import ru.yandex.practicum.mymarket.dto.ItemDto;
-import ru.yandex.practicum.mymarket.entity.CartItem;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.server.ServerWebExchange;
+import reactor.core.publisher.Mono;
+import ru.yandex.practicum.mymarket.utils.SessionUtils;
 import ru.yandex.practicum.mymarket.service.CartService;
-import ru.yandex.practicum.mymarket.service.ItemService;
-
-import java.util.List;
-
 
 @Controller
 @RequestMapping("/cart")
@@ -19,25 +17,42 @@ import java.util.List;
 public class CartController {
 
     private final CartService cartService;
-    private final ItemService itemService;
 
     @GetMapping("/items")
-    public String cartItems(HttpSession session, Model model) {
-        String sessionId = session.getId();
-        List<ItemDto> cartItems = cartService.getCart(sessionId);
-
-        model.addAttribute("items",
-                cartItems);
-        model.addAttribute("total", cartItems.stream()
-                .mapToLong(ci -> ci.getPrice() * ci.getCount())
-                .sum());
-        return "cart";
+    public Mono<String> cart(ServerWebExchange exchange, Model model) {
+        return SessionUtils.getOrCreateSessionId(exchange).flatMap(sessionId ->
+                Mono.zip(
+                        cartService.getCartItems(sessionId).collectList(),
+                        cartService.getTotal(sessionId)
+                ).doOnNext(tuple -> {
+                    model.addAttribute("items", tuple.getT1());
+                    model.addAttribute("total", tuple.getT2());
+                }).thenReturn("cart")
+        );
     }
 
     @PostMapping("/items")
-    public String updateCart(@RequestParam Long id, @RequestParam String action, HttpSession session) {
-        String sessionId = session.getId();
-        if (id != null) cartService.updateQuantity(sessionId, id, action);
-        return "redirect:/cart/items";
+    public Mono<String> updateCart(ServerWebExchange exchange, Model model) {
+        return SessionUtils.getOrCreateSessionId(exchange).flatMap(sessionId ->
+                exchange.getFormData().flatMap(form -> {
+                    String idStr  = form.getFirst("id");
+                    String action = form.getFirst("action");
+
+                    Mono<Void> update = (idStr != null && action != null && !action.isBlank())
+                            ? cartService.updateCart(Long.parseLong(idStr), action, sessionId)
+                            : Mono.empty();
+
+                    return update
+                            .then(Mono.zip(
+                                    cartService.getCartItems(sessionId).collectList(),
+                                    cartService.getTotal(sessionId)
+                            ))
+                            .doOnNext(tuple -> {
+                                model.addAttribute("items", tuple.getT1());
+                                model.addAttribute("total", tuple.getT2());
+                            })
+                            .thenReturn("cart");
+                })
+        );
     }
 }

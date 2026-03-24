@@ -1,16 +1,21 @@
 package ru.yandex.practicum.mymarket.repository;
 
-import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.r2dbc.repository.Query;
+import org.springframework.data.repository.reactive.ReactiveCrudRepository;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 import ru.yandex.practicum.mymarket.entity.CartItem;
 
-import java.util.List;
-import java.util.Optional;
+public interface CartItemRepository extends ReactiveCrudRepository<CartItem, Long> {
+    @Query("SELECT * FROM cart_items WHERE item_id = :itemId AND session_id = :sessionId")
+    Mono<CartItem> findByItemIdAndSessionId(Long itemId, String sessionId);
 
-public interface CartItemRepository extends JpaRepository<CartItem, Long> {
+    @Query("SELECT * FROM cart_items WHERE session_id = :sessionId")
+    Flux<CartItem> findBySessionId(String sessionId);
 
-    List<CartItem> findBySessionId(String sessionId);
+    @Query("DELETE FROM cart_items WHERE session_id = :sessionId")
+    Mono<Void> deleteBySessionId(String sessionId);
 
-    Optional<CartItem> findBySessionIdAndItemId(String sessionId, Long itemId);
-
-    void deleteBySessionId(String sessionId);
+    @Query("DELETE FROM cart_items WHERE item_id = :itemId AND session_id = :sessionId")
+    Mono<Void> deleteByItemIdAndSessionId(Long itemId, String sessionId);
 }

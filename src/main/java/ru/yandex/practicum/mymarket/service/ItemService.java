@@ -1,76 +1,105 @@
 package ru.yandex.practicum.mymarket.service;
 
-import lombok.AllArgsConstructor;
 import lombok.RequiredArgsConstructor;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.PageImpl;
-import org.springframework.data.domain.PageRequest;
-import org.springframework.data.domain.Pageable;
-import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
-import ru.yandex.practicum.mymarket.dto.ItemDto;
-import ru.yandex.practicum.mymarket.entity.CartItem;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
+import ru.yandex.practicum.mymarket.dto.PagingDto;
+import ru.yandex.practicum.mymarket.dto.SortType;
 import ru.yandex.practicum.mymarket.entity.Item;
-import ru.yandex.practicum.mymarket.mapper.ItemMapper;
-import ru.yandex.practicum.mymarket.repository.CartItemRepository;
 import ru.yandex.practicum.mymarket.repository.ItemRepository;
 
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
-import java.util.Map;
-import java.util.stream.Collectors;
 
 @Service
-@AllArgsConstructor
+@RequiredArgsConstructor
 public class ItemService {
+
     private final ItemRepository itemRepository;
-    private final CartItemRepository cartItemRepository;
-    private final ItemMapper itemMapper;
+    private final CartService cartService;
 
-    @Transactional(readOnly = true)
-    public Page<ItemDto> findAll(String search, String sort, int pageNumber, int pageSize, String sessionId) {
-        Sort sortOrder = Sort.unsorted();
-        if ("ALPHA".equals(sort)) {
-            sortOrder = Sort.by(Sort.Direction.ASC, "title");
-        } else if ("PRICE".equals(sort)) {
-            sortOrder = Sort.by(Sort.Direction.ASC, "price");
-        }
-        Pageable pageable = PageRequest.of(pageNumber - 1, pageSize, sortOrder);
-
-        Page<Item> items;
-
-        // Поиск по названию/описанию
-        if (search != null && !search.isEmpty()) {
-            items = itemRepository.findByTitleContainingIgnoreCaseOrDescriptionContainingIgnoreCase(search, search, pageable);
-        } else {
-            items = itemRepository.findAll(pageable);
-        }
-
-        List<CartItem> cartItems = cartItemRepository.findBySessionId(sessionId);
-
-        Map<Long, Integer> cartMap =
-                cartItems.stream()
-                        .collect(Collectors.toMap(
-                                c -> c.getItem().getId(),
-                                CartItem::getQuantity
-                        ));
-
-        List<ItemDto> dtoList = items.getContent().stream()
-                .map(item -> {
-                    ItemDto dto = itemMapper.toDto(item);
-                    dto.setCount(cartMap.getOrDefault(item.getId(), 0));
-                    return dto;
-                })
-                .toList();
-
-        return new PageImpl<>(dtoList, items.getPageable(), items.getTotalElements());
+    public Mono<List<List<Item>>> getItemsPage(String search, String sort,
+                                               int pageNumber, int pageSize,
+                                               String sessionId) {
+        return getItemsPage(search, SortType.fromString(sort), pageNumber, pageSize, sessionId);
     }
 
-    public ItemDto findById(Long id) {
-        return itemMapper.toDto(itemRepository.findById(id).orElse(null));
+    public Mono<List<List<Item>>> getItemsPage(String search, SortType sort,
+                                               int pageNumber, int pageSize,
+                                               String sessionId) {
+        Flux<Item> source = (search != null && !search.isBlank())
+                ? itemRepository.findByTitleOrDescriptionContainingIgnoreCase(search)
+                : itemRepository.findAll();
+
+        return source
+                .concatMap(item -> cartService.getCount(item.getId(), sessionId)
+                        .map(count -> {
+                            item.setCount(count);
+                            return item;
+                        }))
+                .collectList()
+                .map(items -> toPagedRows(items, sort, pageNumber, pageSize));
     }
 
-    public Item findItemById(Long id) {
-        return itemRepository.findById(id).orElse(null);
+    private List<List<Item>> toPagedRows(List<Item> items, SortType sort, int pageNumber, int pageSize) {
+        switch (sort) {
+            case ALPHA -> items.sort(Comparator.comparing(Item::getTitle));
+            case PRICE -> items.sort(Comparator.comparingLong(Item::getPrice));
+            default    -> { /* NO — без сортировки */ }
+        }
+
+        int fromIndex = (pageNumber - 1) * pageSize;
+        if (fromIndex >= items.size()) {
+            return new ArrayList<>();
+        }
+        int toIndex = Math.min(fromIndex + pageSize, items.size());
+        List<Item> page = new ArrayList<>(items.subList(fromIndex, toIndex));
+
+        while (page.size() % 3 != 0) {
+            Item stub = new Item();
+            stub.setId(-1L);
+            page.add(stub);
+        }
+
+        List<List<Item>> rows = new ArrayList<>();
+        for (int i = 0; i < page.size(); i += 3) {
+            rows.add(page.subList(i, i + 3));
+        }
+        return rows;
+    }
+
+    public Mono<Long> countItems(String search) {
+        if (search != null && !search.isBlank()) {
+            return itemRepository.findByTitleOrDescriptionContainingIgnoreCase(search).count();
+        }
+        return itemRepository.count();
+    }
+
+    public Mono<Item> getItem(Long id, String sessionId) {
+        return itemRepository.findById(id)
+                .flatMap(item -> cartService.getCount(item.getId(), sessionId)
+                        .map(count -> {
+                            item.setCount(count);
+                            return item;
+                        }));
+    }
+
+    public Mono<Item> save(Item item) {
+        return itemRepository.save(item);
+    }
+
+    public Mono<PagingDto> buildPaging(String search, String sort,
+                                       int pageNumber, int pageSize) {
+        return countItems(search).map(total -> {
+            int totalPages = (int) Math.ceil((double) total / pageSize);
+            return new PagingDto(
+                    pageSize,
+                    pageNumber,
+                    pageNumber > 1,
+                    pageNumber < totalPages
+            );
+        });
     }
 }

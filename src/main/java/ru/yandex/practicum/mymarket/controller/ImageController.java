@@ -1,34 +1,38 @@
 package ru.yandex.practicum.mymarket.controller;
 
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.core.io.Resource;
-import org.springframework.http.HttpHeaders;
+import lombok.RequiredArgsConstructor;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.*;
-import org.springframework.web.server.ResponseStatusException;
+import reactor.core.publisher.Mono;
 import ru.yandex.practicum.mymarket.service.ImageService;
 
-import static org.springframework.http.HttpStatus.NOT_FOUND;
-@RestController
-@RequestMapping("/images")
+@Controller
+@RequiredArgsConstructor
 public class ImageController {
 
-    @Autowired
-    private ImageService imageService;
+    private final ImageService imageService;
 
     /**
-     * Отдать изображение по имени файла
-     * Пример: GET /images/1.jpg
+     * GET /images/{filename}
+     * Отдаёт изображение по имени файла.
+     * Пример: GET /images/ball.jpg
      */
-    @GetMapping("/{filename:.+}")
-    public ResponseEntity<Resource> getImage(@PathVariable String filename) {
-        Resource resource = imageService.getImageAsResource(filename);
-        if (resource == null) {
-            throw new ResponseStatusException(NOT_FOUND, "Изображение не найдено");
+    @GetMapping("/images/{filename}")
+    public Mono<ResponseEntity<byte[]>> getImage(@PathVariable String filename) {
+        // Защита от path traversal
+        if (filename.contains("..") || filename.contains("/") || filename.contains("\\")) {
+            return Mono.just(ResponseEntity.badRequest().build());
         }
 
-        return ResponseEntity.ok()
-                .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"" + filename + "\"")
-                .body(resource);
+        String mediaType = imageService.detectMediaType(filename);
+
+        return imageService.loadImage(filename)
+                .filter(bytes -> bytes != null && bytes.length > 0)
+                .map(bytes -> ResponseEntity.ok()
+                        .contentType(MediaType.parseMediaType(mediaType))
+                        .body(bytes))
+                .switchIfEmpty(Mono.just(ResponseEntity.<byte[]>notFound().build()));
     }
 }

@@ -1,85 +1,95 @@
 package ru.yandex.practicum.mymarket.controller;
 
-import jakarta.servlet.http.HttpSession;
-import lombok.AllArgsConstructor;
-import org.springframework.data.domain.Page;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.*;
-import ru.yandex.practicum.mymarket.config.Paging;
-import ru.yandex.practicum.mymarket.dto.ItemDto;
-import ru.yandex.practicum.mymarket.entity.Item;
+import org.springframework.web.server.ServerWebExchange;
+import reactor.core.publisher.Mono;
+import ru.yandex.practicum.mymarket.utils.SessionUtils;
 import ru.yandex.practicum.mymarket.service.CartService;
 import ru.yandex.practicum.mymarket.service.ItemService;
 
-import java.util.ArrayList;
 import java.util.List;
 
 @Controller
-@RequestMapping("/items")
-@AllArgsConstructor
+@RequiredArgsConstructor
 public class ItemController {
 
     private final ItemService itemService;
     private final CartService cartService;
 
-    @GetMapping
-    public String getItems(
-            @RequestParam(required = false) String search,
-            @RequestParam(required = false, defaultValue = "NO") String sort,
-            @RequestParam(required = false, defaultValue = "1") int pageNumber,
-            @RequestParam(required = false, defaultValue = "5") int pageSize,
-            Model model,
-            HttpSession session) {
+    @GetMapping({"/", "/items"})
+    public Mono<String> items(
+            @RequestParam(defaultValue = "") String search,
+            @RequestParam(defaultValue = "NO") String sort,
+            @RequestParam(defaultValue = "1") int pageNumber,
+            @RequestParam(defaultValue = "5") int pageSize,
+            ServerWebExchange exchange,
+            Model model) {
 
-        Page<ItemDto> itemDtoPage = itemService.findAll(search, sort, pageNumber, pageSize, session.getId());
-        List<ItemDto> items = itemDtoPage.getContent();
-
-        List<List<ItemDto>> groupedItems = new ArrayList<>();
-        for (int i = 0; i < items.size(); i += 3) {
-            List<ItemDto> row = items.subList(i, Math.min(i + 3, items.size()));
-            groupedItems.add(row);
-        }
-        model.addAttribute("items", groupedItems);
-        model.addAttribute("search", search);
-        model.addAttribute("sort", sort);
-        model.addAttribute("paging", new Paging(pageSize, pageNumber, itemDtoPage.hasPrevious(), itemDtoPage.hasNext()));
-
-        return "items";
+        return SessionUtils.getOrCreateSessionId(exchange).flatMap(sessionId ->
+                Mono.zip(
+                        itemService.getItemsPage(search, sort, pageNumber, pageSize, sessionId),
+                        itemService.buildPaging(search, sort, pageNumber, pageSize)
+                ).doOnNext(tuple -> {
+                    model.addAttribute("items", tuple.getT1());
+                    model.addAttribute("paging", tuple.getT2());
+                    model.addAttribute("search", search);
+                    model.addAttribute("sort", sort);
+                }).thenReturn("items")
+        );
     }
 
-    @GetMapping("/{id}")
-    public String getItem(@PathVariable Long id, Model model) {
-        ItemDto item = itemService.findById(id);
-        model.addAttribute("item", item);
-        return "item";
+    @PostMapping("/items")
+    public Mono<String> updateCartFromItems(ServerWebExchange exchange) {
+        return SessionUtils.getOrCreateSessionId(exchange).flatMap(sessionId ->
+                exchange.getFormData().flatMap(form -> {
+                    String idStr      = form.getFirst("id");
+                    String action     = form.getFirst("action");
+                    String search     = form.getOrDefault("search",     List.of("")).get(0);
+                    String sort       = form.getOrDefault("sort",       List.of("NO")).get(0);
+                    String pageNumber = form.getOrDefault("pageNumber", List.of("1")).get(0);
+                    String pageSize   = form.getOrDefault("pageSize",   List.of("5")).get(0);
+
+                    Mono<Void> update = (idStr != null && action != null && !action.isBlank())
+                            ? cartService.updateCart(Long.parseLong(idStr), action, sessionId)
+                            : Mono.empty();
+
+                    return update.thenReturn("redirect:/items?search=" + search
+                            + "&sort=" + sort
+                            + "&pageNumber=" + pageNumber
+                            + "&pageSize=" + pageSize);
+                })
+        );
     }
 
-    @PostMapping("/{id}")
-    public String updateItemCount(@PathVariable Long id, @RequestParam String action, HttpSession session) {
-        String sessionId = session.getId();
-        if (id != null) cartService.updateQuantity(sessionId, id, action);
-        return "redirect:/items/" + id;
+    @GetMapping("/items/{id}")
+    public Mono<String> item(@PathVariable Long id, ServerWebExchange exchange, Model model) {
+        return SessionUtils.getOrCreateSessionId(exchange).flatMap(sessionId ->
+                itemService.getItem(id, sessionId)
+                        .doOnNext(item -> model.addAttribute("item", item))
+                        .thenReturn("item")
+        );
     }
 
-    @PostMapping
-    public String updateCart(
-            @RequestParam Long id,
-            @RequestParam String action,
-            @RequestParam(required = false) String search,
-            @RequestParam(required = false, defaultValue = "NO") String sort,
-            @RequestParam(required = false, defaultValue = "1") int pageNumber,
-            @RequestParam(required = false, defaultValue = "5") int pageSize,
-            HttpSession session
-            ) {
-        String sessionId = session.getId();
-        if (id != null) cartService.updateQuantity(sessionId, id, action);
+    @PostMapping("/items/{id}")
+    public Mono<String> updateCartFromItem(
+            @PathVariable Long id,
+            ServerWebExchange exchange,
+            Model model) {
 
-        return "redirect:/items?search=" + (search != null ? search : "") +
-                "&sort=" + sort +
-                "&pageNumber=" + pageNumber +
-                "&pageSize=" + pageSize;
+        return SessionUtils.getOrCreateSessionId(exchange).flatMap(sessionId ->
+                exchange.getFormData().flatMap(form -> {
+                    String action = form.getFirst("action");
+                    Mono<Void> update = (action != null && !action.isBlank())
+                            ? cartService.updateCart(id, action, sessionId)
+                            : Mono.empty();
+                    return update
+                            .then(itemService.getItem(id, sessionId))
+                            .doOnNext(item -> model.addAttribute("item", item))
+                            .thenReturn("item");
+                })
+        );
     }
-
-
 }

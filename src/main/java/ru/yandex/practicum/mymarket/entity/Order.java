@@ -1,27 +1,29 @@
 package ru.yandex.practicum.mymarket.entity;
 
-import jakarta.persistence.*;
-import lombok.*;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+import org.springframework.data.annotation.Id;
+import org.springframework.data.annotation.Transient;
+import org.springframework.data.relational.core.mapping.Table;
 
 import java.util.List;
 
-@Entity
-@Getter
-@Setter
+@Data
+@Builder
 @NoArgsConstructor
 @AllArgsConstructor
-@Builder
-@Table(name = "orders")
+@Table("orders")
 public class Order {
+
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
     private String sessionId;
 
-    @JoinColumn(name = "order_id")
-    @OneToMany(cascade = CascadeType.ALL)
-    private List<OrderItem> items;
+    private long totalSum;
 
-    private Long totalSum;
+    @Transient
+    private List<OrderItem> items;
 }
