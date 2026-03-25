@@ -1,0 +1,34 @@
+version: '3.8'
+
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: shop-redis
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
+
+  payment:
+    build:
+      context: ./payment
+      dockerfile: Dockerfile
+    container_name: payment
+    ports:
+      - "8081:8081"
+    restart: unless-stopped
+
+  market:
+    build:
+      context: ./market
+      dockerfile: Dockerfile
+    container_name: market
+    ports:
+      - "8080:8080"
+    environment:
+      - SPRING_DATA_REDIS_HOST=redis
+      - SPRING_DATA_REDIS_PORT=6379
+      - PAYMENT_SERVICE_URL=http://payment:8081
+    depends_on:
+      - redis
+      - payment
+    restart: unless-stopped

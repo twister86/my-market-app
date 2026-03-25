@@ -31,18 +31,18 @@ build/
 
 ### VS Code ###
 .vscode/
-/src/main/resources/static/5.jpg
-/src/main/resources/static/1.jpg
-/src/main/resources/static/2.jpg
-/src/main/resources/static/3.jpg
-/src/main/resources/static/4.jpg
-/src/main/resources/static/6.jpg
-/src/main/resources/static/7.jpg
-/src/main/resources/static/8.jpg
-/src/main/resources/static/9.jpg
-/src/main/resources/static/10.jpg
-/src/main/resources/static/11.jpg
-/src/main/resources/static/12.jpg
-/src/main/resources/static/13.jpg
-/src/main/resources/static/14.jpg
-/src/main/resources/static/15.jpg
+/shop/src/main/resources/static/5.jpg
+/shop/src/main/resources/static/1.jpg
+/shop/src/main/resources/static/2.jpg
+/shop/src/main/resources/static/3.jpg
+/shop/src/main/resources/static/4.jpg
+/shop/src/main/resources/static/6.jpg
+/shop/src/main/resources/static/7.jpg
+/shop/src/main/resources/static/8.jpg
+/shop/src/main/resources/static/9.jpg
+/shop/src/main/resources/static/10.jpg
+/shop/src/main/resources/static/11.jpg
+/shop/src/main/resources/static/12.jpg
+/shop/src/main/resources/static/13.jpg
+/shop/src/main/resources/static/14.jpg
+/shop/src/main/resources/static/15.jpg

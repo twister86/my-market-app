@@ -18,8 +18,18 @@ public class OrderService {
     private final OrderItemRepository orderItemRepository;
     private final ItemRepository itemRepository;
     private final CartService cartService;
+    private final PaymentClientService paymentClientService;
 
+    /**
+     * Оформить заказ:
+     * 1. Собрать позиции из корзины
+     * 2. Попытаться списать деньги через сервис платежей
+     * 3. Создать заказ в БД и очистить корзину
+     */
     public Mono<Long> checkout(String sessionId) {
+        // userId для простоты = sessionId (в реальном проекте — из аутентификации)
+        String userId = "default";
+
         return cartService.getAllCartItems(sessionId)
                 .flatMap(ci -> itemRepository.findById(ci.getItemId())
                         .map(item -> OrderItem.builder()
@@ -33,16 +43,26 @@ public class OrderService {
                     long total = orderItems.stream()
                             .mapToLong(oi -> oi.getPrice() * oi.getCount())
                             .sum();
-                    Order order = Order.builder()
-                            .sessionId(sessionId)
-                            .totalSum(total)
-                            .build();
-                    return orderRepository.save(order)
-                            .flatMap(savedOrder -> {
-                                orderItems.forEach(oi -> oi.setOrderId(savedOrder.getId()));
-                                return orderItemRepository.saveAll(orderItems)
-                                        .then(cartService.clear(sessionId))
-                                        .thenReturn(savedOrder.getId());
+
+                    // Сначала пробуем списать деньги
+                    return paymentClientService.pay(userId, total, 0L)
+                            .flatMap(paymentOk -> {
+                                if (!paymentOk) {
+                                    return Mono.error(new IllegalStateException(
+                                            "Платёж отклонён: недостаточно средств"));
+                                }
+                                // Платёж прошёл — создаём заказ
+                                Order order = Order.builder()
+                                        .sessionId(sessionId)
+                                        .totalSum(total)
+                                        .build();
+                                return orderRepository.save(order)
+                                        .flatMap(savedOrder -> {
+                                            orderItems.forEach(oi -> oi.setOrderId(savedOrder.getId()));
+                                            return orderItemRepository.saveAll(orderItems)
+                                                    .then(cartService.clear(sessionId))
+                                                    .thenReturn(savedOrder.getId());
+                                        });
                             });
                 });
     }
