@@ -30,7 +30,7 @@
     <dependencyManagement>
         <dependencies>
             <dependency>
-                <groupId>com.shop</groupId>
+                <groupId>ru.yandex.practicum.market</groupId>
                 <artifactId>payment</artifactId>
                 <version>${project.version}</version>
             </dependency>
