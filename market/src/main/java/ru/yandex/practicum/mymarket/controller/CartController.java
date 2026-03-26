@@ -8,6 +8,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.server.ServerWebExchange;
 import reactor.core.publisher.Mono;
+import ru.yandex.practicum.mymarket.service.PaymentClientService;
 import ru.yandex.practicum.mymarket.utils.SessionUtils;
 import ru.yandex.practicum.mymarket.service.CartService;
 
@@ -17,6 +18,7 @@ import ru.yandex.practicum.mymarket.service.CartService;
 public class CartController {
 
     private final CartService cartService;
+    private final PaymentClientService paymentClientService;
 
     @GetMapping("/items")
     public Mono<String> cart(ServerWebExchange exchange, Model model) {
@@ -24,10 +26,18 @@ public class CartController {
                 Mono.zip(
                         cartService.getCartItems(sessionId).collectList(),
                         cartService.getTotal(sessionId)
-                ).doOnNext(tuple -> {
-                    model.addAttribute("items", tuple.getT1());
-                    model.addAttribute("total", tuple.getT2());
-                }).thenReturn("cart")
+                ).flatMap(tuple -> {
+                    long total = tuple.getT2();
+                    // Проверяем баланс — хватает ли средств для оплаты
+                    return paymentClientService.hasEnoughBalance(sessionId, total)
+                            .map(canPay -> {
+                                model.addAttribute("items",  tuple.getT1());
+                                model.addAttribute("total",  total);
+                                model.addAttribute("canPay", canPay);
+                                model.addAttribute("paymentError", null);
+                                return "cart";
+                            });
+                })
         );
     }
 
@@ -47,11 +57,16 @@ public class CartController {
                                     cartService.getCartItems(sessionId).collectList(),
                                     cartService.getTotal(sessionId)
                             ))
-                            .doOnNext(tuple -> {
-                                model.addAttribute("items", tuple.getT1());
-                                model.addAttribute("total", tuple.getT2());
-                            })
-                            .thenReturn("cart");
+                            .flatMap(tuple -> {
+                                long total = tuple.getT2();
+                                return paymentClientService.hasEnoughBalance(sessionId, total)
+                                        .map(canPay -> {
+                                            model.addAttribute("items",  tuple.getT1());
+                                            model.addAttribute("total",  total);
+                                            model.addAttribute("canPay", canPay);
+                                            return "cart";
+                                        });
+                            });
                 })
         );
     }

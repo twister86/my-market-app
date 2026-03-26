@@ -9,30 +9,29 @@ import reactor.core.publisher.Mono;
 @Service
 public class PaymentService {
 
-    /** Получить баланс пользователя */
+    /**
+     * Получить баланс пользователя.
+     * Если счёт не существует — создаётся автоматически со случайным балансом.
+     */
     public Mono<Long> getBalance(String userId) {
-        PaymentAccount account = PaymentAccount.ACCOUNTS.get(userId);
-        if (account == null) {
-            return Mono.error(new IllegalArgumentException("Пользователь не найден: " + userId));
-        }
+        PaymentAccount account = PaymentAccount.getOrCreate(userId);
+        log.debug("getBalance userId={} balance={}", userId, account.getBalance());
         return Mono.just(account.getBalance());
     }
 
     /**
      * Списать сумму с баланса.
      * @return остаток баланса после списания
+     * @throws IllegalStateException если средств недостаточно
      */
     public Mono<Long> pay(String userId, long amount) {
-        PaymentAccount account = PaymentAccount.ACCOUNTS.get(userId);
-        if (account == null) {
-            return Mono.error(new IllegalArgumentException("Пользователь не найден: " + userId));
-        }
+        PaymentAccount account = PaymentAccount.getOrCreate(userId);
         if (account.getBalance() < amount) {
             return Mono.error(new IllegalStateException(
-                    "Недостаточно средств: баланс " + account.getBalance() + ", требуется " + amount));
+                    "Недостаточно средств: баланс " + account.getBalance() + " руб., требуется " + amount + " руб."));
         }
         account.setBalance(account.getBalance() - amount);
-        log.info("Payment: userId={} amount={} remaining={}", userId, amount, account.getBalance());
+        log.info("Payment OK: userId={} amount={} remaining={}", userId, amount, account.getBalance());
         return Mono.just(account.getBalance());
     }
 }

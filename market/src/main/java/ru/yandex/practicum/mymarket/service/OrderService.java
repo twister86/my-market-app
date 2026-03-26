@@ -28,7 +28,7 @@ public class OrderService {
      */
     public Mono<Long> checkout(String sessionId) {
         // userId для простоты = sessionId (в реальном проекте — из аутентификации)
-        String userId = "default";
+        String userId = sessionId;
 
         return cartService.getAllCartItems(sessionId)
                 .flatMap(ci -> itemRepository.findById(ci.getItemId())

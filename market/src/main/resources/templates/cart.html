@@ -46,10 +46,23 @@
         </div>
         <div class="row p-2">
             <div class="col">
+                <!-- Сообщение об ошибке платежа -->
+                <div th:if="${paymentError}" class="alert alert-danger" role="alert">
+                    ❌ Оплата не прошла: недостаточно средств на балансе.
+                </div>
+
                 <form action="/orders/buy" method="post" th:if="${!items.isEmpty()}">
                     <div class="hstack gap-3">
                         <h2 th:text="'Итого: '+${total}+' руб.'"/>
-                        <button class="btn btn-warning ms-auto">Купить</button>
+                        <!-- Кнопка активна только если хватает баланса -->
+                        <button class="btn btn-warning ms-auto"
+                                th:disabled="${!canPay}"
+                                th:title="${canPay} ? '' : 'Недостаточно средств на балансе'">
+                            Купить
+                        </button>
+                    </div>
+                    <div th:if="${!canPay}" class="text-danger mt-2 small">
+                        ⚠ Недостаточно средств на балансе для оформления заказа.
                     </div>
                 </form>
             </div>

@@ -3,6 +3,7 @@ package ru.yandex.practicum.payment.model;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 
+import java.util.Random;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.Map;
 
@@ -12,13 +13,15 @@ public class PaymentAccount {
     private String userId;
     private long balance;
 
-    /** In-memory хранилище счетов (в реальном проекте — БД) */
+    private static final Random RANDOM = new Random();
     public static final Map<String, PaymentAccount> ACCOUNTS = new ConcurrentHashMap<>();
 
-    static {
-        // Тестовые счета
-        ACCOUNTS.put("default", new PaymentAccount("default", 100_000L));
-        ACCOUNTS.put("user1",   new PaymentAccount("user1",   50_000L));
-        ACCOUNTS.put("user2",   new PaymentAccount("user2",   10_000L));
+    /**
+     * Получить или создать счёт для userId.
+     * Баланс нового счёта — случайное значение от 10000 до 50000 руб.
+     */
+    public static PaymentAccount getOrCreate(String userId) {
+        return ACCOUNTS.computeIfAbsent(userId,
+                id -> new PaymentAccount(id, 10000L + RANDOM.nextInt(49_001)));
     }
 }

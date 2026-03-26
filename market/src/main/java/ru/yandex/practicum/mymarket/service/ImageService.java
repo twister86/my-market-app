@@ -5,9 +5,14 @@ import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+
 @Service
 public class ImageService {
 
+    private static final Path UPLOAD_DIR = Paths.get("uploads/images");
     /** Директория встроенных изображений в classpath */
     private static final String CLASSPATH_IMAGES = "static/";
 
@@ -45,5 +50,17 @@ public class ImageService {
         if (lower.endsWith(".svg"))  return "image/svg+xml";
         if (lower.endsWith(".bmp"))  return "image/bmp";
         return "image/jpeg"; // jpg / jpeg — по умолчанию
+    }
+
+    /**
+     * Сохраняет байты изображения в uploads/images/<filename>.
+     * Создаёт директорию, если её нет.
+     */
+    public Mono<Void> saveImage(String filename, byte[] data) {
+        return Mono.fromCallable(() -> {
+            Files.createDirectories(UPLOAD_DIR);
+            Files.write(UPLOAD_DIR.resolve(filename), data);
+            return null;
+        }).subscribeOn(Schedulers.boundedElastic()).then();
     }
 }
