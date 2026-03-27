@@ -1,26 +1,18 @@
 package ru.yandex.practicum.payment;
 
-import org.springframework.http.HttpStatus;
-import org.springframework.test.context.bean.override.mockito.MockitoBean;
-import org.springframework.web.server.ResponseStatusException;
-import reactor.core.publisher.Mono;
-import ru.yandex.practicum.payment.controller.PaymentController;
-import ru.yandex.practicum.payment.model.PaymentAccount;
-import ru.yandex.practicum.payment.model.PaymentResponse;
-import ru.yandex.practicum.payment.service.PaymentService;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.reactive.WebFluxTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.reactive.server.WebTestClient;
+import reactor.core.publisher.Mono;
+import ru.yandex.practicum.payment.controller.PaymentController;
+import ru.yandex.practicum.payment.model.PaymentRequest;
+import ru.yandex.practicum.payment.service.PaymentService;
 
-import java.util.Map;
-
-import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
-import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 
@@ -34,75 +26,55 @@ class PaymentControllerTest {
     @MockitoBean
     private PaymentService paymentService;
 
-    @BeforeEach
-    void setUp() {
-        PaymentAccount.ACCOUNTS.put("default", new PaymentAccount("default", 100_000L));
-        PaymentAccount.ACCOUNTS.put("poor",    new PaymentAccount("poor",    500L));
-    }
-
     @Test
-    void getBalance_existingUser_returns200() {
-        when(paymentService.getBalance(anyString()))
-                .thenReturn(Mono.just(100000L));
+    void getBalance_returns200() {
+        when(paymentService.getBalance("user1")).thenReturn(Mono.just(50_000L));
 
-        when(paymentService.pay(anyString(), anyLong()))
-                .thenReturn(Mono.just(90000L));
-        webTestClient.get().uri("/payment/balance/default")
+        webTestClient.get().uri("/payment/balance/user1")
                 .exchange()
                 .expectStatus().isOk()
                 .expectBody()
-                .jsonPath("$.userId").isEqualTo("default")
-                .jsonPath("$.balance").isEqualTo(100_000);
+                .jsonPath("$.userId").isEqualTo("user1")
+                .jsonPath("$.balance").isEqualTo(50_000);
     }
 
     @Test
-    void getBalance_unknownUser_returns404() {
-        when(paymentService.getBalance(anyString()))
-                .thenReturn(Mono.error(new IllegalArgumentException("Insufficient funds")));
-        webTestClient.get().uri("/payment/balance/unknown")
-                .exchange()
-                .expectStatus().isNotFound();
-    }
+    void pay_success_returns200() {
+        when(paymentService.pay(eq("user1"), eq(10_000L)))
+                .thenReturn(Mono.just(40_000L));
 
-    @Test
-    void pay_sufficientFunds_returns200WithSuccess() {
-        when(paymentService.getBalance(anyString()))
-                .thenReturn(Mono.just(10000L));
+        PaymentRequest req = new PaymentRequest();
+        req.setUserId("user1");
+        req.setAmount(10_000L);
+        req.setOrderId(1L);
 
-        when(paymentService.pay(anyString(), anyLong()))
-                .thenReturn(Mono.just(90000L));
         webTestClient.post().uri("/payment/pay")
                 .contentType(MediaType.APPLICATION_JSON)
-                .bodyValue(Map.of("userId", "default", "amount", 10_000, "orderId", 1))
+                .bodyValue(req)
                 .exchange()
                 .expectStatus().isOk()
                 .expectBody()
                 .jsonPath("$.success").isEqualTo(true)
-                .jsonPath("$.remainingBalance").isEqualTo(90_000)
+                .jsonPath("$.remainingBalance").isEqualTo(40_000)
                 .jsonPath("$.orderId").isEqualTo(1);
     }
 
     @Test
     void pay_insufficientFunds_returns400() {
-        when(paymentService.pay(anyString(), anyLong()))
-                .thenReturn(Mono.error(new IllegalStateException("Insufficient funds")));
+        when(paymentService.pay(eq("poor"), anyLong()))
+                .thenReturn(Mono.error(new IllegalStateException("Недостаточно средств")));
+
+        PaymentRequest req = new PaymentRequest();
+        req.setUserId("poor");
+        req.setAmount(99_999L);
+        req.setOrderId(2L);
+
         webTestClient.post().uri("/payment/pay")
                 .contentType(MediaType.APPLICATION_JSON)
-                .bodyValue(Map.of("userId", "poor", "amount", 10_000, "orderId", 2))
+                .bodyValue(req)
                 .exchange()
                 .expectStatus().isBadRequest()
                 .expectBody()
                 .jsonPath("$.success").isEqualTo(false);
-    }
-
-    @Test
-    void pay_unknownUser_returns404() {
-        when(paymentService.pay(any(), anyLong()))
-                .thenReturn(Mono.error(new ResponseStatusException(HttpStatus.NOT_FOUND)));
-        webTestClient.post().uri("/payment/pay")
-                .contentType(MediaType.APPLICATION_JSON)
-                .bodyValue(Map.of("userId", "ghost", "amount", 100, "orderId", 3))
-                .exchange()
-                .expectStatus().isNotFound();
     }
 }

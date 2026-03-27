@@ -1,62 +1,64 @@
 package ru.yandex.practicum.payment.controller;
 
+import org.springframework.web.server.ServerWebExchange;
 import ru.yandex.practicum.payment.service.PaymentService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import reactor.core.publisher.Mono;
+import ru.yandex.practicum.payment.api.PaymentApi;
+import ru.yandex.practicum.payment.model.BalanceResponse;
+import ru.yandex.practicum.payment.model.PaymentRequest;
+import ru.yandex.practicum.payment.model.PaymentResponse;
 
-import java.util.HashMap;
-import java.util.Map;
 
 @Slf4j
 @RestController
 @RequiredArgsConstructor
-public class PaymentController {
+public class PaymentController implements PaymentApi {
 
     private final PaymentService paymentService;
 
-    @GetMapping("/payment/balance/{userId}")
-    public Mono<ResponseEntity<Map<String, Object>>> getBalance(@PathVariable String userId) {
+    @Override
+    public Mono<ResponseEntity<BalanceResponse>> getBalance(
+            String userId, ServerWebExchange exchange) {
+
         return paymentService.getBalance(userId)
                 .map(balance -> {
-                    Map<String, Object> body = new HashMap<>();
-                    body.put("userId", userId);
-                    body.put("balance", balance);
-                    return ResponseEntity.<Map<String, Object>>ok(body);
+                    BalanceResponse body = new BalanceResponse();
+                    body.setUserId(userId);
+                    body.setBalance(balance);
+                    return ResponseEntity.ok(body);
                 })
                 .onErrorResume(IllegalArgumentException.class, e ->
-                        Mono.just(ResponseEntity.<Map<String, Object>>notFound().build())
+                        Mono.just(ResponseEntity.<BalanceResponse>notFound().build())
                 );
     }
 
-    @PostMapping("/payment/pay")
-    public Mono<ResponseEntity<Map<String, Object>>> pay(
-            @RequestBody Map<String, Object> request) {
+    @Override
+    public Mono<ResponseEntity<PaymentResponse>> pay(
+            Mono<PaymentRequest> paymentRequestMono, ServerWebExchange exchange) {
 
-        String userId = (String) request.get("userId");
-        long amount   = ((Number) request.get("amount")).longValue();
-        long orderId  = ((Number) request.get("orderId")).longValue();
-
-        return paymentService.pay(userId, amount)
-                .map(remaining -> {
-                    Map<String, Object> body = new HashMap<>();
-                    body.put("success", true);
-                    body.put("remainingBalance", remaining);
-                    body.put("orderId", orderId);
-                    return ResponseEntity.<Map<String, Object>>ok(body);
-                })
-                .onErrorResume(IllegalArgumentException.class, e ->
-                        Mono.just(ResponseEntity.<Map<String, Object>>notFound().build())
-                )
-                .onErrorResume(IllegalStateException.class, e -> {
-                    Map<String, Object> body = new HashMap<>();
-                    body.put("success", false);
-                    body.put("remainingBalance", 0L);
-                    body.put("orderId", orderId);
-                    body.put("message", e.getMessage());
-                    return Mono.just(ResponseEntity.<Map<String, Object>>badRequest().body(body));
-                });
+        return paymentRequestMono.flatMap(req ->
+                paymentService.pay(req.getUserId(), req.getAmount())
+                        .map(remaining -> {
+                            PaymentResponse body = new PaymentResponse();
+                            body.setSuccess(true);
+                            body.setRemainingBalance(remaining);
+                            body.setOrderId(req.getOrderId());
+                            return ResponseEntity.ok(body);
+                        })
+                        .onErrorResume(IllegalArgumentException.class, e ->
+                                Mono.just(ResponseEntity.<PaymentResponse>notFound().build())
+                        )
+                        .onErrorResume(IllegalStateException.class, e -> {
+                            PaymentResponse body = new PaymentResponse();
+                            body.setSuccess(false);
+                            body.setRemainingBalance(0L);
+                            body.setOrderId(req.getOrderId());
+                            return Mono.just(ResponseEntity.badRequest().body(body));
+                        })
+        );
     }
 }
