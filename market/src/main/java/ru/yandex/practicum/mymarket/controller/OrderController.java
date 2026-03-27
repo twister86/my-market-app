@@ -9,6 +9,9 @@ import reactor.core.publisher.Mono;
 import ru.yandex.practicum.mymarket.utils.SessionUtils;
 import ru.yandex.practicum.mymarket.service.OrderService;
 
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
+
 @Controller
 @RequiredArgsConstructor
 public class OrderController {
@@ -39,15 +42,15 @@ public class OrderController {
     }
 
     @PostMapping("/orders/buy")
-    public Mono<String> buy(ServerWebExchange exchange, Model model) {
-        return SessionUtils.getOrCreateSessionId(exchange).flatMap(sessionId ->
-                orderService.checkout(sessionId)
-                        .map(id -> "redirect:/orders/" + id + "?newOrder=true")
-                        .onErrorResume(IllegalStateException.class, e -> {
-                            // Платёж отклонён — редирект в корзину с сообщением об ошибке
-                            model.addAttribute("paymentError", e.getMessage());
-                            return Mono.just("redirect:/cart/items?paymentError=true");
-                        })
-        );
+    public Mono<String> buy(ServerWebExchange exchange) {
+        return SessionUtils.getOrCreateSessionId(exchange)
+                .flatMap(sessionId ->
+                        orderService.checkout(sessionId)
+                                .map(id -> "redirect:/orders/" + id + "?newOrder=true")
+                                .onErrorResume(IllegalStateException.class, e -> {
+                                    String encodedMessage = URLEncoder.encode(e.getMessage(), StandardCharsets.UTF_8);
+                                    return Mono.just("redirect:/cart/items?paymentError=" + encodedMessage);
+                                })
+                );
     }
 }

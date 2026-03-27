@@ -47,8 +47,8 @@
         <div class="row p-2">
             <div class="col">
                 <!-- Сообщение об ошибке платежа -->
-                <div th:if="${paymentError}" class="alert alert-danger" role="alert">
-                    ❌ Оплата не прошла: недостаточно средств на балансе.
+                <div th:if="${paymentError}" class="alert alert-danger" role="alert"
+                     th:text="'❌ Оплата не прошла: ' + ${paymentError}">
                 </div>
 
                 <form action="/orders/buy" method="post" th:if="${!items.isEmpty()}">

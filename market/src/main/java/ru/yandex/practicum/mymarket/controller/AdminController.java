@@ -84,6 +84,6 @@ public class AdminController {
 
     /** Убирает path-traversal символы из имени файла */
     private String sanitizeFilename(String original) {
-        return original.replaceAll("[^a-zA-Z0-9._\\-а-яА-Я]", "_");
+        return original.replaceAll("[^a-zA-Z0-9._\\-]", "_");
     }
 }
