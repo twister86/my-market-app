@@ -7,11 +7,14 @@ import org.springframework.context.event.EventListener;
 import org.springframework.core.io.Resource;
 import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
 import org.springframework.data.r2dbc.core.R2dbcEntityTemplate;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import ru.yandex.practicum.mymarket.entity.Item;
+import ru.yandex.practicum.mymarket.entity.User;
 import ru.yandex.practicum.mymarket.repository.ItemRepository;
+import ru.yandex.practicum.mymarket.repository.UserRepository;
 
 import java.util.Arrays;
 import java.util.Comparator;
@@ -39,7 +42,9 @@ public class DataInitializer {
 
 
     private final ItemRepository itemRepository;
+    private final UserRepository userRepository;
     private final R2dbcEntityTemplate template;
+    private final PasswordEncoder passwordEncoder;
 
     @EventListener(ApplicationReadyEvent.class)
     public void init() {
@@ -107,5 +112,41 @@ public class DataInitializer {
             log.error("DataInitializer: не удалось просканировать {}", IMAGES_LOCATION, e);
             return List.of();
         }
+    }
+
+    // ===== Пользователи =====
+
+    private Mono<Void> initUsers() {
+        return userRepository.count()
+                .flatMap(count -> {
+                    if (count > 0) {
+                        log.info("DataInitializer: таблица users уже содержит {} записей, пропускаем.", count);
+                        return Mono.empty();
+                    }
+                    log.info("DataInitializer: создаём пользователей по умолчанию...");
+                    return populateDefaultUsers();
+                });
+    }
+
+    private Mono<Void> populateDefaultUsers() {
+        List<User> users = List.of(
+                User.builder()
+                        .username("user")
+                        .password(passwordEncoder.encode("user123"))
+                        .role("ROLE_USER")
+                        .build(),
+                User.builder()
+                        .username("admin")
+                        .password(passwordEncoder.encode("admin123"))
+                        .role("ROLE_ADMIN")
+                        .build()
+        );
+
+        return Flux.fromIterable(users)
+                .concatMap(user -> userRepository.save(user))
+                .doOnNext(saved -> log.info("DataInitializer: создан пользователь username={}",
+                        saved.getUsername()))
+                .then()
+                .doOnSuccess(v -> log.info("DataInitializer: пользователи по умолчанию созданы."));
     }
 }

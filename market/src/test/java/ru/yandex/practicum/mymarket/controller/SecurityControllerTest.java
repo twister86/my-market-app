@@ -43,7 +43,7 @@ class SecurityControllerTest {
 
     @Test
     void anonymousUser_canAccessItemsList() {
-        when(itemService.getItemsPage(any(), any(), anyInt(), anyInt(), anyString()))
+        when(itemService.getItemsPage(anyString(), anyString(), anyInt(), anyInt(), anyString()))
                 .thenReturn(Mono.just(List.of()));
         when(itemService.buildPaging(any(), any(), anyInt(), anyInt()))
                 .thenReturn(Mono.just(new PagingDto(5, 1, false, false)));
