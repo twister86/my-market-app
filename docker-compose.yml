@@ -18,8 +18,11 @@ services:
     environment:
       - SPRING_DATA_REDIS_HOST=redis
       - SPRING_DATA_REDIS_PORT=6379
+      - SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_JWK-SET-URI=http://auth-server:9000/oauth2/jwks
+      - SPRING_SECURITY_OAUTH2_RESOURCESERVER_JWT_ISSUER-URI=http://auth-server:9000
     depends_on:
       - redis
+      - auth-server
     restart: unless-stopped
 
   market:
@@ -33,7 +36,19 @@ services:
       - SPRING_DATA_REDIS_HOST=redis
       - SPRING_DATA_REDIS_PORT=6379
       - PAYMENT_SERVICE_URL=http://payment:8081
+      - SPRING_SECURITY_OAUTH2_CLIENT_PROVIDER_PAYMENT-CLIENT_TOKEN-URI=http://auth-server:9000/oauth2/token
     depends_on:
       - redis
       - payment
+      - auth-server
+    restart: unless-stopped
+
+
+  auth-server:
+    build:
+      context: ./auth-server
+      dockerfile: Dockerfile
+    container_name: auth-server
+    ports:
+      - "9000:9000"
     restart: unless-stopped
