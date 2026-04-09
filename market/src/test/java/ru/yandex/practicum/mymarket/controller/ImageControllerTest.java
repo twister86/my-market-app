@@ -3,22 +3,26 @@ package ru.yandex.practicum.mymarket.controller;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.reactive.WebFluxTest;
+import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.reactive.server.WebTestClient;
 import reactor.core.publisher.Mono;
+import ru.yandex.practicum.mymarket.config.SecurityConfig;
 import ru.yandex.practicum.mymarket.service.ImageService;
+import ru.yandex.practicum.mymarket.service.UserDetailsServiceImpl;
 
 import static org.mockito.Mockito.when;
 
 @WebFluxTest(ImageController.class)
+@Import(SecurityConfig.class)
 class ImageControllerTest {
 
     @Autowired
     private WebTestClient webTestClient;
 
-    @MockitoBean
-    private ImageService imageService;
+    @MockitoBean private ImageService imageService;
+    @MockitoBean private UserDetailsServiceImpl userDetailsService;
 
     @Test
     void getImage_existingJpeg_returns200() {

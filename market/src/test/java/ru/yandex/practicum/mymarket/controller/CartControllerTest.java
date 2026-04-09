@@ -4,34 +4,34 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.reactive.WebFluxTest;
+import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
+import org.springframework.security.test.context.support.WithMockUser;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.reactive.server.WebTestClient;
 import org.springframework.web.reactive.function.BodyInserters;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
+import ru.yandex.practicum.mymarket.config.SecurityConfig;
 import ru.yandex.practicum.mymarket.entity.Item;
 import ru.yandex.practicum.mymarket.service.CartService;
 import ru.yandex.practicum.mymarket.service.PaymentClientService;
+import ru.yandex.practicum.mymarket.service.UserDetailsServiceImpl;
 
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.when;
 
 @WebFluxTest(CartController.class)
+@Import(SecurityConfig.class)
 class CartControllerTest {
-
-    private static final String SESSION_COOKIE = "SHOP_SESSION";
-    private static final String SESSION_ID = "test-session-id";
 
     @Autowired
     private WebTestClient webTestClient;
 
-    @MockitoBean
-    private CartService cartService;
-
-    @MockitoBean
-    private PaymentClientService paymentClientService;
+    @MockitoBean private CartService cartService;
+    @MockitoBean private PaymentClientService paymentClientService;
+    @MockitoBean private UserDetailsServiceImpl userDetailsService;
 
     @BeforeEach
     void setUp() {
@@ -43,23 +43,23 @@ class CartControllerTest {
     }
 
     @Test
+    @WithMockUser(username = "user", roles = "USER")
     void getCart_returns200() {
-
         when(paymentClientService.hasEnoughBalance(anyString(), anyLong()))
                 .thenReturn(Mono.just(true));
 
         webTestClient.get().uri("/cart/items")
-                .cookie(SESSION_COOKIE, SESSION_ID)
                 .exchange()
                 .expectStatus().isOk();
     }
 
     @Test
+    @WithMockUser(username = "user", roles = "USER")
     void postCart_plusAction_returns200() {
         when(paymentClientService.hasEnoughBalance(anyString(), anyLong()))
                 .thenReturn(Mono.just(true));
+
         webTestClient.post().uri("/cart/items")
-                .cookie(SESSION_COOKIE, SESSION_ID)
                 .contentType(MediaType.APPLICATION_FORM_URLENCODED)
                 .body(BodyInserters.fromFormData("id", "1").with("action", "PLUS"))
                 .exchange()
@@ -67,11 +67,12 @@ class CartControllerTest {
     }
 
     @Test
+    @WithMockUser(username = "user", roles = "USER")
     void postCart_minusAction_returns200() {
         when(paymentClientService.hasEnoughBalance(anyString(), anyLong()))
                 .thenReturn(Mono.just(true));
+
         webTestClient.post().uri("/cart/items")
-                .cookie(SESSION_COOKIE, SESSION_ID)
                 .contentType(MediaType.APPLICATION_FORM_URLENCODED)
                 .body(BodyInserters.fromFormData("id", "1").with("action", "MINUS"))
                 .exchange()
@@ -79,11 +80,12 @@ class CartControllerTest {
     }
 
     @Test
+    @WithMockUser(username = "user", roles = "USER")
     void postCart_deleteAction_returns200() {
         when(paymentClientService.hasEnoughBalance(anyString(), anyLong()))
                 .thenReturn(Mono.just(true));
+
         webTestClient.post().uri("/cart/items")
-                .cookie(SESSION_COOKIE, SESSION_ID)
                 .contentType(MediaType.APPLICATION_FORM_URLENCODED)
                 .body(BodyInserters.fromFormData("id", "1").with("action", "DELETE"))
                 .exchange()
@@ -91,17 +93,17 @@ class CartControllerTest {
     }
 
     @Test
+    @WithMockUser(username = "user", roles = "USER")
     void postCart_emptyCart_stillReturns200() {
         when(cartService.getCartItems(anyString())).thenReturn(Flux.empty());
         when(cartService.getTotal(anyString())).thenReturn(Mono.just(0L));
         when(paymentClientService.hasEnoughBalance(anyString(), anyLong()))
                 .thenReturn(Mono.just(true));
+
         webTestClient.post().uri("/cart/items")
-                .cookie(SESSION_COOKIE, SESSION_ID)
                 .contentType(MediaType.APPLICATION_FORM_URLENCODED)
                 .body(BodyInserters.fromFormData("id", "99").with("action", "DELETE"))
                 .exchange()
-                .expectStatus()
-                .isOk();
+                .expectStatus().isOk();
     }
 }

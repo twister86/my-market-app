@@ -5,9 +5,11 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.reactive.WebFluxTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.reactive.server.WebTestClient;
 import reactor.core.publisher.Mono;
+import ru.yandex.practicum.payment.config.PaymentSecurityConfig;
 import ru.yandex.practicum.payment.controller.PaymentController;
 import ru.yandex.practicum.payment.model.PaymentRequest;
 import ru.yandex.practicum.payment.service.PaymentService;
@@ -15,9 +17,10 @@ import ru.yandex.practicum.payment.service.PaymentService;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
+import static org.springframework.security.test.web.reactive.server.SecurityMockServerConfigurers.mockJwt;
 
 @WebFluxTest(PaymentController.class)
-@Import(PaymentService.class)
+@Import(PaymentSecurityConfig.class)
 class PaymentControllerTest {
 
     @Autowired
@@ -30,7 +33,9 @@ class PaymentControllerTest {
     void getBalance_returns200() {
         when(paymentService.getBalance("user1")).thenReturn(Mono.just(50_000L));
 
-        webTestClient.get().uri("/payment/balance/user1")
+        webTestClient.mutateWith(mockJwt()
+                        .authorities(new SimpleGrantedAuthority("SCOPE_payment.read")))
+                .get().uri("/payment/balance/user1")
                 .exchange()
                 .expectStatus().isOk()
                 .expectBody()
@@ -48,7 +53,9 @@ class PaymentControllerTest {
         req.setAmount(10_000L);
         req.setOrderId(1L);
 
-        webTestClient.post().uri("/payment/pay")
+        webTestClient.mutateWith(mockJwt()
+                        .authorities(new SimpleGrantedAuthority("SCOPE_payment.write")))
+                .post().uri("/payment/pay")
                 .contentType(MediaType.APPLICATION_JSON)
                 .bodyValue(req)
                 .exchange()
@@ -69,12 +76,39 @@ class PaymentControllerTest {
         req.setAmount(99_999L);
         req.setOrderId(2L);
 
-        webTestClient.post().uri("/payment/pay")
+        webTestClient.mutateWith(mockJwt()
+                        .authorities(new SimpleGrantedAuthority("SCOPE_payment.write")))
+                .post().uri("/payment/pay")
                 .contentType(MediaType.APPLICATION_JSON)
                 .bodyValue(req)
                 .exchange()
                 .expectStatus().isBadRequest()
                 .expectBody()
                 .jsonPath("$.success").isEqualTo(false);
+    }
+
+    @Test
+    void getBalance_withoutToken_returns401() {
+        webTestClient.get().uri("/payment/balance/user1")
+                .exchange()
+                .expectStatus().isUnauthorized();
+    }
+
+    @Test
+    void pay_withoutToken_returns401() {
+        webTestClient.post().uri("/payment/pay")
+                .contentType(MediaType.APPLICATION_JSON)
+                .bodyValue("{\"userId\":\"u\",\"amount\":100,\"orderId\":1}")
+                .exchange()
+                .expectStatus().isUnauthorized();
+    }
+
+    @Test
+    void getBalance_wrongScope_returns403() {
+        webTestClient.mutateWith(mockJwt()
+                        .authorities(new SimpleGrantedAuthority("SCOPE_payment.write")))
+                .get().uri("/payment/balance/user1")
+                .exchange()
+                .expectStatus().isForbidden();
     }
 }
