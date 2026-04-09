@@ -5,6 +5,7 @@ import com.nimbusds.jose.jwk.RSAKey;
 import com.nimbusds.jose.jwk.source.ImmutableJWKSet;
 import com.nimbusds.jose.jwk.source.JWKSource;
 import com.nimbusds.jose.proc.SecurityContext;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.annotation.Order;
@@ -31,10 +32,9 @@ import java.util.UUID;
 @Configuration
 public class AuthorizationServerConfig {
 
-    /**
-     * Регистрируем market-app как OAuth2-клиент с Client Credentials Flow.
-     * payment-service зарегистрирован как audience в токенах.
-     */
+    @Value("${auth-server.issuer}")
+    private String issuer;
+
     @Bean
     public RegisteredClientRepository registeredClientRepository() {
         RegisteredClient marketClient = RegisteredClient
@@ -53,9 +53,6 @@ public class AuthorizationServerConfig {
         return new InMemoryRegisteredClientRepository(marketClient);
     }
 
-    /**
-     * RSA-ключ для подписи JWT-токенов.
-     */
     @Bean
     public JWKSource<SecurityContext> jwkSource() throws Exception {
         KeyPairGenerator gen = KeyPairGenerator.getInstance("RSA");
@@ -73,7 +70,7 @@ public class AuthorizationServerConfig {
     @Bean
     public AuthorizationServerSettings authorizationServerSettings() {
         return AuthorizationServerSettings.builder()
-                .issuer("http://localhost:9000")
+                .issuer(issuer)  // <- берём из properties
                 .build();
     }
 }
