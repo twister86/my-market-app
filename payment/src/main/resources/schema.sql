@@ -1,0 +1,4 @@
+CREATE TABLE IF NOT EXISTS payment_accounts (
+    user_id VARCHAR(128) PRIMARY KEY,
+    balance BIGINT NOT NULL DEFAULT 0
+);

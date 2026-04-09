@@ -1,0 +1,131 @@
+openapi: 3.0.3
+info:
+  title: Payment Service API
+  description: Сервис платежей — проверка баланса и списание средств
+  version: 1.0.0
+
+servers:
+  - url: http://localhost:8081
+    description: Payment service
+
+paths:
+  /payment/balance/{userId}:
+    get:
+      summary: Получить баланс пользователя
+      operationId: getBalance
+      tags:
+        - payment
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Баланс получен
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BalanceResponse'
+        '404':
+          description: Пользователь не найден
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /payment/pay:
+    post:
+      summary: Осуществить платёж (списание баланса)
+      operationId: pay
+      tags:
+        - payment
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PaymentRequest'
+      responses:
+        '200':
+          description: Платёж выполнен успешно
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentResponse'
+        '400':
+          description: Недостаточно средств или неверный запрос
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Пользователь не найден
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+components:
+  schemas:
+    BalanceResponse:
+      type: object
+      required:
+        - userId
+        - balance
+      properties:
+        userId:
+          type: string
+          description: Идентификатор пользователя
+        balance:
+          type: integer
+          format: int64
+          description: Текущий баланс в рублях
+
+    PaymentRequest:
+      type: object
+      required:
+        - userId
+        - amount
+        - orderId
+      properties:
+        userId:
+          type: string
+          description: Идентификатор пользователя
+        amount:
+          type: integer
+          format: int64
+          description: Сумма к списанию в рублях
+        orderId:
+          type: integer
+          format: int64
+          description: Идентификатор заказа
+
+    PaymentResponse:
+      type: object
+      required:
+        - success
+        - remainingBalance
+        - orderId
+      properties:
+        success:
+          type: boolean
+          description: Успешность платежа
+        remainingBalance:
+          type: integer
+          format: int64
+          description: Остаток баланса после списания
+        orderId:
+          type: integer
+          format: int64
+          description: Идентификатор заказа
+
+    ErrorResponse:
+      type: object
+      required:
+        - message
+      properties:
+        message:
+          type: string
+          description: Описание ошибки

@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org" lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Добавить товар</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: Arial, sans-serif; background: #f5f5f5; }
+        .header { background: #333; color: #fff; padding: 12px 24px; display: flex; align-items: center; gap: 16px; }
+        .header h1 { font-size: 20px; flex: 1; }
+        .header a { color: #fff; text-decoration: none; background: #555; padding: 6px 14px; border-radius: 4px; }
+        .header a:hover { background: #777; }
+        .main { padding: 32px 24px; max-width: 560px; margin: 0 auto; }
+        h2 { font-size: 22px; margin-bottom: 24px; }
+        .form-group { margin-bottom: 16px; }
+        label { display: block; font-size: 13px; font-weight: 600; color: #444; margin-bottom: 6px; }
+        input[type=text], input[type=number], textarea {
+            width: 100%; padding: 9px 12px; border: 1px solid #ccc; border-radius: 4px;
+            font-size: 14px; font-family: inherit;
+        }
+        textarea { height: 90px; resize: vertical; }
+        input:focus, textarea:focus { outline: none; border-color: #0066cc; }
+        .btn-submit { padding: 10px 28px; background: #0066cc; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 15px; }
+        .btn-submit:hover { background: #0055aa; }
+        .back-link { display: inline-block; margin-top: 16px; color: #0066cc; text-decoration: none; font-size: 14px; }
+    </style>
+</head>
+<body>
+
+<div class="header">
+    <h1>🛒 Интернет-магазин</h1>
+    <a th:href="@{/}">Витрина</a>
+    <a th:href="@{/cart/items}">Корзина</a>
+    <a th:href="@{/orders}">Заказы</a>
+</div>
+
+<div class="main">
+    <h2>Добавить товар</h2>
+
+    <form th:action="@{/admin/items/add}" method="post" enctype="multipart/form-data">
+        <div class="form-group">
+            <label for="title">Название *</label>
+            <input type="text" id="title" name="title" required placeholder="Название товара">
+        </div>
+        <div class="form-group">
+            <label for="description">Описание</label>
+            <textarea id="description" name="description" placeholder="Описание товара"></textarea>
+        </div>
+        <div class="form-group">
+            <label for="price">Цена (₽) *</label>
+            <input type="number" id="price" name="price" required min="0" placeholder="0">
+        </div>
+        <div class="form-group">
+            <label for="image">Изображение товара</label>
+            <input type="file" id="image" name="image" accept="image/*"
+                   style="padding:6px 0; font-size:13px;">
+            <div style="font-size:12px;color:#888;margin-top:4px;">
+                Поддерживаются JPG, PNG, GIF, WEBP. Если не выбрать — будет стандартное изображение.
+            </div>
+        </div>
+        <button type="submit" class="btn-submit">Добавить товар</button>
+    </form>
+
+    <a class="back-link" th:href="@{/}">← Вернуться к витрине</a>
+</div>
+
+</body>
+</html>
