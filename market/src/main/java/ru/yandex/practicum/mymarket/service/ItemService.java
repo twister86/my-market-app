@@ -37,27 +37,39 @@ public class ItemService {
     public Mono<List<List<Item>>> getItemsPage(String search, SortType sort,
                                                int pageNumber, int pageSize,
                                                String sessionId) {
-        Flux<Item> source = (search != null && !search.isBlank())
-                ? itemRepository.findByTitleOrDescriptionContainingIgnoreCase(search)
-                : itemRepository.findAll();
+        int offset = (pageNumber - 1) * pageSize;
+        boolean hasSearch = search != null && !search.isBlank();
+
+        // Пагинация на уровне БД — не загружаем все записи в память
+        Flux<Item> source = switch (sort) {
+            case ALPHA -> hasSearch
+                    ? itemRepository.findBySearchPagedOrderByTitle(search, pageSize, offset)
+                    : itemRepository.findAllPagedOrderByTitle(pageSize, offset);
+            case PRICE -> hasSearch
+                    ? itemRepository.findBySearchPagedOrderByPrice(search, pageSize, offset)
+                    : itemRepository.findAllPagedOrderByPrice(pageSize, offset);
+            default    -> hasSearch
+                    ? itemRepository.findBySearchPaged(search, pageSize, offset)
+                    : itemRepository.findAllPaged(pageSize, offset);
+        };
 
         return source
                 .concatMap(item -> enrichWithCount(item, sessionId))
                 .collectList()
-                .map(items -> toPagedRows(items, sort, pageNumber, pageSize));
+                .map(this::toRows);
     }
 
     public Mono<Item> getItem(Long id, String sessionId) {
         String key = CACHE_PREFIX + id;
         return redisTemplate.opsForValue().get(key)
                 .doOnNext(i -> log.debug("Cache HIT item id={}", id))
-                .switchIfEmpty(
+                .switchIfEmpty(Mono.defer(() ->
                         itemRepository.findById(id)
                                 .doOnNext(i -> log.debug("Cache MISS item id={}", id))
                                 .flatMap(i -> redisTemplate.opsForValue()
                                         .set(key, i, CACHE_TTL)
                                         .thenReturn(i))
-                )
+                ))
                 .flatMap(item -> enrichWithCount(item, sessionId));
     }
 
@@ -72,7 +84,7 @@ public class ItemService {
 
     public Mono<Long> countItems(String search) {
         if (search != null && !search.isBlank()) {
-            return itemRepository.findByTitleOrDescriptionContainingIgnoreCase(search).count();
+            return itemRepository.countBySearch(search);
         }
         return itemRepository.count();
     }
@@ -93,27 +105,19 @@ public class ItemService {
                 });
     }
 
-    private List<List<Item>> toPagedRows(List<Item> items, SortType sort,
-                                         int pageNumber, int pageSize) {
-        switch (sort) {
-            case ALPHA -> items.sort(Comparator.comparing(Item::getTitle));
-            case PRICE -> items.sort(Comparator.comparingLong(Item::getPrice));
-            default    -> {}
-        }
-
-        int fromIndex = (pageNumber - 1) * pageSize;
-        if (fromIndex >= items.size()) return new ArrayList<>();
-        int toIndex = Math.min(fromIndex + pageSize, items.size());
-        List<Item> page = new ArrayList<>(items.subList(fromIndex, toIndex));
-
-        while (page.size() % 3 != 0) {
+    /** Разбиваем плоский список на строки по 3 товара для отображения сеткой */
+    private List<List<Item>> toRows(List<Item> items) {
+        // Дополняем до кратного 3 пустыми заглушками
+        List<Item> padded = new ArrayList<>(items);
+        while (padded.size() % 3 != 0) {
             Item stub = new Item();
             stub.setId(-1L);
-            page.add(stub);
+            padded.add(stub);
         }
-
         List<List<Item>> rows = new ArrayList<>();
-        for (int i = 0; i < page.size(); i += 3) rows.add(page.subList(i, i + 3));
+        for (int i = 0; i < padded.size(); i += 3) {
+            rows.add(padded.subList(i, i + 3));
+        }
         return rows;
     }
 }

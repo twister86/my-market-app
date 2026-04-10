@@ -6,7 +6,6 @@ import okhttp3.mockwebserver.MockWebServer;
 import okhttp3.mockwebserver.RecordedRequest;
 import org.jetbrains.annotations.NotNull;
 import org.junit.jupiter.api.AfterAll;
-import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -14,15 +13,17 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
-import org.springframework.http.ResponseCookie;
+import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.reactive.server.WebTestClient;
-import org.springframework.util.MultiValueMap;
 import org.springframework.web.reactive.function.BodyInserters;
+import ru.yandex.practicum.mymarket.entity.Item;
+import ru.yandex.practicum.mymarket.entity.User;
 import ru.yandex.practicum.mymarket.repository.CartItemRepository;
 import ru.yandex.practicum.mymarket.repository.ItemRepository;
 import ru.yandex.practicum.mymarket.repository.OrderRepository;
+import ru.yandex.practicum.mymarket.repository.UserRepository;
 
 import java.io.IOException;
 import java.time.Duration;
@@ -36,7 +37,7 @@ class ShopIntegrationTest {
     static MockWebServer mockPaymentServer = new MockWebServer();
 
     @DynamicPropertySource
-    static void configurePaymentUrl(DynamicPropertyRegistry registry) throws IOException {
+    static void configureProperties(DynamicPropertyRegistry registry) throws IOException {
         mockPaymentServer.start();
         mockPaymentServer.setDispatcher(new Dispatcher() {
             @NotNull
@@ -55,11 +56,20 @@ class ShopIntegrationTest {
                             .addHeader("Content-Type", "application/json")
                             .setBody("{\"success\":true,\"remainingBalance\":990000,\"orderId\":1}");
                 }
+                // OAuth2 token endpoint
+                if (path != null && path.contains("/oauth2/token")) {
+                    return new MockResponse()
+                            .setResponseCode(200)
+                            .addHeader("Content-Type", "application/json")
+                            .setBody("{\"access_token\":\"test-token\",\"token_type\":\"Bearer\",\"expires_in\":3600}");
+                }
                 return new MockResponse().setResponseCode(404);
             }
         });
         registry.add("payment.service.url",
                 () -> "http://localhost:" + mockPaymentServer.getPort());
+        registry.add("spring.security.oauth2.client.provider.payment-client.token-uri",
+                () -> "http://localhost:" + mockPaymentServer.getPort() + "/oauth2/token");
     }
 
     @AfterAll
@@ -72,14 +82,12 @@ class ShopIntegrationTest {
 
     private WebTestClient client;
 
-    @Autowired
-    private ItemRepository itemRepository;
-    @Autowired
-    private CartItemRepository cartItemRepository;
-    @Autowired
-    private OrderRepository orderRepository;
+    @Autowired private ItemRepository itemRepository;
+    @Autowired private CartItemRepository cartItemRepository;
+    @Autowired private OrderRepository orderRepository;
+    @Autowired private UserRepository userRepository;
+    @Autowired private PasswordEncoder passwordEncoder;
 
-    private static final String COOKIE_NAME = "SHOP_SESSION";
     private static final Duration TIMEOUT = Duration.ofSeconds(5);
 
     @BeforeEach
@@ -92,26 +100,57 @@ class ShopIntegrationTest {
 
         cartItemRepository.deleteAll().block(TIMEOUT);
         orderRepository.deleteAll().block(TIMEOUT);
+
+        // Создаём тестового пользователя если ещё не существует
+        userRepository.findByUsername("user")
+                .switchIfEmpty(userRepository.save(
+                        User.builder()
+                                .username("user")
+                                .password(passwordEncoder.encode("user123"))
+                                .role("ROLE_USER")
+                                .build()
+                ))
+                .block(TIMEOUT);
+    }
+
+    /**
+     * Логинится через форму, получает SESSION-куку Spring Security,
+     * использует её для всех последующих запросов.
+     */
+    private String login() {
+        var result = client.post().uri("/login")
+                .contentType(MediaType.APPLICATION_FORM_URLENCODED)
+                .body(BodyInserters.fromFormData("username", "user")
+                        .with("password", "user123"))
+                .exchange()
+                .expectStatus().is3xxRedirection()
+                .returnResult(String.class);
+
+        String location = result.getResponseHeaders().getFirst("Location");
+        System.out.println("=== LOGIN redirect location: " + location);
+        System.out.println("=== LOGIN response cookies: " + result.getResponseCookies());
+
+        // Spring Security при неудачном логине редиректит на /login?error
+        // При успехе — на / или на запрошенную страницу
+        assertThat(location)
+                .as("Редирект после логина не должен вести на /login?error")
+                .doesNotContain("error");
+
+        var sessionCookie = result.getResponseCookies().getFirst("SESSION");
+        assertThat(sessionCookie)
+                .as("SESSION кука должна быть установлена после логина")
+                .isNotNull();
+        return "SESSION=" + sessionCookie.getValue();
     }
 
     @Test
     void fullShoppingFlow() {
-        // 1. Первый запрос — получаем куку сессии из ответа
-        MultiValueMap<String, ResponseCookie> cookies = client.get().uri("/items")
-                .exchange()
-                .expectStatus().isOk()
-                .returnResult(String.class)
-                .getResponseCookies();
+        // 1. Логинимся — получаем SESSION куку
+        String sessionCookie = login();
 
-        assertThat(cookies.containsKey(COOKIE_NAME))
-                .as("Сервер должен вернуть куку SHOP_SESSION").isTrue();
-
-        String sessionId = cookies.getFirst(COOKIE_NAME).getValue();
-        String sessionCookie = COOKIE_NAME + "=" + sessionId;
-
-        // 2. Берём id первого товара — если товаров нет, пропускаем тест
+        // 2. Берём id первого товара
         Long itemId = itemRepository.findAll()
-                .map(item -> item.getId())
+                .map(Item::getId)
                 .blockFirst(TIMEOUT);
         assumeTrue(itemId != null, "Товаров нет в БД — тест пропущен");
 
@@ -128,9 +167,9 @@ class ShopIntegrationTest {
                 .exchange()
                 .expectStatus().is3xxRedirection();
 
-        // 4. Проверяем что запись в БД создана с нашей сессией
+        // 4. Проверяем что запись в БД создана для пользователя "user"
         Long cartCount = cartItemRepository.findAll()
-                .filter(ci -> sessionId.equals(ci.getSessionId()))
+                .filter(ci -> "user".equals(ci.getSessionId()))
                 .count()
                 .block(TIMEOUT);
         assertThat(cartCount).as("В корзине должен быть 1 товар").isGreaterThan(0);
@@ -156,7 +195,7 @@ class ShopIntegrationTest {
 
         // 7. После оформления корзина пуста
         Long cartAfter = cartItemRepository.findAll()
-                .filter(ci -> sessionId.equals(ci.getSessionId()))
+                .filter(ci -> "user".equals(ci.getSessionId()))
                 .count()
                 .block(TIMEOUT);
         assertThat(cartAfter).as("Корзина должна быть пуста после заказа").isZero();
@@ -173,10 +212,8 @@ class ShopIntegrationTest {
                 .exchange()
                 .expectStatus().isOk();
 
-        // 10. Заказ сохранён в БД
-        Long orderCount = orderRepository.findBySessionId(sessionId)
-                .count()
-                .block(TIMEOUT);
+        // 10. Заказ сохранён в БД для пользователя "user"
+        Long orderCount = orderRepository.findBySessionId("user").count().block(TIMEOUT);
         assertThat(orderCount).as("Должен быть ровно 1 заказ").isEqualTo(1);
     }
 }

@@ -6,9 +6,9 @@ import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ServerWebExchange;
 import reactor.core.publisher.Mono;
-import ru.yandex.practicum.mymarket.utils.SessionUtils;
 import ru.yandex.practicum.mymarket.service.CartService;
 import ru.yandex.practicum.mymarket.service.ItemService;
+import ru.yandex.practicum.mymarket.utils.SecurityUtils;
 
 import java.util.List;
 
@@ -25,25 +25,25 @@ public class ItemController {
             @RequestParam(defaultValue = "NO") String sort,
             @RequestParam(defaultValue = "1") int pageNumber,
             @RequestParam(defaultValue = "5") int pageSize,
-            ServerWebExchange exchange,
             Model model) {
 
-        return SessionUtils.getOrCreateSessionId(exchange).flatMap(sessionId ->
-                Mono.zip(
-                        itemService.getItemsPage(search, sort, pageNumber, pageSize, sessionId),
+        // Для анонимов count=0 для всех товаров
+        return SecurityUtils.getCurrentUsername()
+                .defaultIfEmpty("anonymous")
+                .flatMap(username -> Mono.zip(
+                        itemService.getItemsPage(search, sort, pageNumber, pageSize, username),
                         itemService.buildPaging(search, sort, pageNumber, pageSize)
                 ).doOnNext(tuple -> {
-                    model.addAttribute("items", tuple.getT1());
+                    model.addAttribute("items",  tuple.getT1());
                     model.addAttribute("paging", tuple.getT2());
                     model.addAttribute("search", search);
-                    model.addAttribute("sort", sort);
-                }).thenReturn("items")
-        );
+                    model.addAttribute("sort",   sort);
+                }).thenReturn("items"));
     }
 
     @PostMapping("/items")
     public Mono<String> updateCartFromItems(ServerWebExchange exchange) {
-        return SessionUtils.getOrCreateSessionId(exchange).flatMap(sessionId ->
+        return SecurityUtils.getCurrentUsername().flatMap(username ->
                 exchange.getFormData().flatMap(form -> {
                     String idStr      = form.getFirst("id");
                     String action     = form.getFirst("action");
@@ -53,7 +53,7 @@ public class ItemController {
                     String pageSize   = form.getOrDefault("pageSize",   List.of("5")).get(0);
 
                     Mono<Void> update = (idStr != null && action != null && !action.isBlank())
-                            ? cartService.updateCart(Long.parseLong(idStr), action, sessionId)
+                            ? cartService.updateCart(Long.parseLong(idStr), action, username)
                             : Mono.empty();
 
                     return update.thenReturn("redirect:/items?search=" + search
@@ -65,12 +65,12 @@ public class ItemController {
     }
 
     @GetMapping("/items/{id}")
-    public Mono<String> item(@PathVariable Long id, ServerWebExchange exchange, Model model) {
-        return SessionUtils.getOrCreateSessionId(exchange).flatMap(sessionId ->
-                itemService.getItem(id, sessionId)
+    public Mono<String> item(@PathVariable Long id, Model model) {
+        return SecurityUtils.getCurrentUsername()
+                .defaultIfEmpty("anonymous")
+                .flatMap(username -> itemService.getItem(id, username)
                         .doOnNext(item -> model.addAttribute("item", item))
-                        .thenReturn("item")
-        );
+                        .thenReturn("item"));
     }
 
     @PostMapping("/items/{id}")
@@ -79,14 +79,14 @@ public class ItemController {
             ServerWebExchange exchange,
             Model model) {
 
-        return SessionUtils.getOrCreateSessionId(exchange).flatMap(sessionId ->
+        return SecurityUtils.getCurrentUsername().flatMap(username ->
                 exchange.getFormData().flatMap(form -> {
                     String action = form.getFirst("action");
                     Mono<Void> update = (action != null && !action.isBlank())
-                            ? cartService.updateCart(id, action, sessionId)
+                            ? cartService.updateCart(id, action, username)
                             : Mono.empty();
                     return update
-                            .then(itemService.getItem(id, sessionId))
+                            .then(itemService.getItem(id, username))
                             .doOnNext(item -> model.addAttribute("item", item))
                             .thenReturn("item");
                 })

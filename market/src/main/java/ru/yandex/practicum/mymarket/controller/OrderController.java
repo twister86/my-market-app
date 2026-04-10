@@ -6,21 +6,19 @@ import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ServerWebExchange;
 import reactor.core.publisher.Mono;
-import ru.yandex.practicum.mymarket.utils.SessionUtils;
 import ru.yandex.practicum.mymarket.service.OrderService;
-
-import java.net.URLEncoder;
-import java.nio.charset.StandardCharsets;
+import ru.yandex.practicum.mymarket.utils.SecurityUtils;
 
 @Controller
 @RequiredArgsConstructor
 public class OrderController {
+
     private final OrderService orderService;
 
     @GetMapping("/orders")
-    public Mono<String> orders(ServerWebExchange exchange, Model model) {
-        return SessionUtils.getOrCreateSessionId(exchange).flatMap(sessionId ->
-                orderService.getAllOrders(sessionId)
+    public Mono<String> orders(Model model) {
+        return SecurityUtils.getCurrentUsername().flatMap(username ->
+                orderService.getAllOrders(username)
                         .collectList()
                         .doOnNext(orders -> model.addAttribute("orders", orders))
                         .thenReturn("orders")
@@ -32,7 +30,6 @@ public class OrderController {
             @PathVariable Long id,
             @RequestParam(defaultValue = "false") boolean newOrder,
             Model model) {
-
         return orderService.getOrder(id)
                 .doOnNext(order -> {
                     model.addAttribute("order", order);
@@ -42,15 +39,13 @@ public class OrderController {
     }
 
     @PostMapping("/orders/buy")
-    public Mono<String> buy(ServerWebExchange exchange) {
-        return SessionUtils.getOrCreateSessionId(exchange)
-                .flatMap(sessionId ->
-                        orderService.checkout(sessionId)
-                                .map(id -> "redirect:/orders/" + id + "?newOrder=true")
-                                .onErrorResume(IllegalStateException.class, e -> {
-                                    String encodedMessage = URLEncoder.encode(e.getMessage(), StandardCharsets.UTF_8);
-                                    return Mono.just("redirect:/cart/items?paymentError=" + encodedMessage);
-                                })
-                );
+    public Mono<String> buy(ServerWebExchange exchange, Model model) {
+        return SecurityUtils.getCurrentUsername().flatMap(username ->
+                orderService.checkout(username)
+                        .map(id -> "redirect:/orders/" + id + "?newOrder=true")
+                        .onErrorResume(IllegalStateException.class, e ->
+                                Mono.just("redirect:/cart/items?paymentError=true")
+                        )
+        );
     }
 }
